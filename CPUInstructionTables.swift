@@ -276,6 +276,76 @@ enum CPUInstructionTables {
             return 2
 
 
+
+        case 0x0A: // ASL A
+            if cpu.aIs8() {
+                let v = cpu.a8()
+                let res = v &<< 1
+                cpu.setA8(res)
+                cpu.setFlag(.carry, (v & 0x80) != 0)
+                cpu.updateNZ8(res)
+            } else {
+                let v = cpu.r.a
+                let res = v &<< 1
+                cpu.setA(res)
+                cpu.setFlag(.carry, (v & 0x8000) != 0)
+                cpu.updateNZ16(res)
+            }
+            return 2
+
+        case 0x2A: // ROL A
+            if cpu.aIs8() {
+                let v = cpu.a8()
+                let carryIn: u8 = cpu.flag(.carry) ? 1 : 0
+                let res = (v &<< 1) | carryIn
+                cpu.setA8(res)
+                cpu.setFlag(.carry, (v & 0x80) != 0)
+                cpu.updateNZ8(res)
+            } else {
+                let v = cpu.r.a
+                let carryIn: u16 = cpu.flag(.carry) ? 1 : 0
+                let res = (v &<< 1) | carryIn
+                cpu.setA(res)
+                cpu.setFlag(.carry, (v & 0x8000) != 0)
+                cpu.updateNZ16(res)
+            }
+            return 2
+
+        case 0x4A: // LSR A
+            if cpu.aIs8() {
+                let v = cpu.a8()
+                let res = v >> 1
+                cpu.setA8(res)
+                cpu.setFlag(.carry, (v & 0x01) != 0)
+                cpu.updateNZ8(res)
+            } else {
+                let v = cpu.r.a
+                let res = v >> 1
+                cpu.setA(res)
+                cpu.setFlag(.carry, (v & 0x0001) != 0)
+                cpu.updateNZ16(res)
+            }
+            return 2
+
+        case 0x6A: // ROR A
+            if cpu.aIs8() {
+                let v = cpu.a8()
+                let carryIn: u8 = cpu.flag(.carry) ? 0x80 : 0
+                let res = (v >> 1) | carryIn
+                cpu.setA8(res)
+                cpu.setFlag(.carry, (v & 0x01) != 0)
+                cpu.updateNZ8(res)
+            } else {
+                let v = cpu.r.a
+                let carryIn: u16 = cpu.flag(.carry) ? 0x8000 : 0
+                let res = (v >> 1) | carryIn
+                cpu.setA(res)
+                cpu.setFlag(.carry, (v & 0x0001) != 0)
+                cpu.updateNZ16(res)
+            }
+            return 2
+
+
         // MARK: - ALU (logic + arithmetic)
 
         case 0x09: // ORA #imm
@@ -515,6 +585,56 @@ enum CPUInstructionTables {
         case 0x3C: // BIT abs,X
             return bit_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
 
+
+        case 0x06: // ASL dp
+            return asl_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+
+        case 0x16: // ASL dp,X
+            return asl_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0x0E: // ASL abs
+            return asl_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0x1E: // ASL abs,X
+            return asl_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+
+        case 0x26: // ROL dp
+            return rol_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+
+        case 0x36: // ROL dp,X
+            return rol_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0x2E: // ROL abs
+            return rol_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0x3E: // ROL abs,X
+            return rol_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+
+        case 0x46: // LSR dp
+            return lsr_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+
+        case 0x56: // LSR dp,X
+            return lsr_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0x4E: // LSR abs
+            return lsr_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0x5E: // LSR abs,X
+            return lsr_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+
+        case 0x66: // ROR dp
+            return ror_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+
+        case 0x76: // ROR dp,X
+            return ror_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0x6E: // ROR abs
+            return ror_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0x7E: // ROR abs,X
+            return ror_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+
+
         // MARK: - Loads
 
         case 0xA9: // LDA #imm
@@ -647,6 +767,20 @@ enum CPUInstructionTables {
 
         case 0x8C: // STY abs
             return sty_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+
+
+        case 0x64: // STZ dp
+            return stz_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
+
+        case 0x74: // STZ dp,X
+            return stz_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
+
+        case 0x9C: // STZ abs
+            return stz_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+
+        case 0x9E: // STZ abs,X
+            return stz_mem(cpu: cpu, addr: CPUAddressing.absX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
+
 
         // MARK: - Flow control
 
@@ -983,6 +1117,99 @@ enum CPUInstructionTables {
         }
         return cycles
     }
+
+
+    @inline(__always)
+    private static func asl_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            let res = v &<< 1
+            cpu.write8(bank, addr, res)
+            cpu.setFlag(.carry, (v & 0x80) != 0)
+            cpu.updateNZ8(res)
+        } else {
+            let v = cpu.read16(bank, addr)
+            let res = v &<< 1
+            cpu.write8(bank, addr, lo8(res))
+            cpu.write8(bank, addr &+ 1, hi8(res))
+            cpu.setFlag(.carry, (v & 0x8000) != 0)
+            cpu.updateNZ16(res)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func lsr_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            let res = v >> 1
+            cpu.write8(bank, addr, res)
+            cpu.setFlag(.carry, (v & 0x01) != 0)
+            cpu.updateNZ8(res)
+        } else {
+            let v = cpu.read16(bank, addr)
+            let res = v >> 1
+            cpu.write8(bank, addr, lo8(res))
+            cpu.write8(bank, addr &+ 1, hi8(res))
+            cpu.setFlag(.carry, (v & 0x0001) != 0)
+            cpu.updateNZ16(res)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func rol_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            let carryIn: u8 = cpu.flag(.carry) ? 1 : 0
+            let res = (v &<< 1) | carryIn
+            cpu.write8(bank, addr, res)
+            cpu.setFlag(.carry, (v & 0x80) != 0)
+            cpu.updateNZ8(res)
+        } else {
+            let v = cpu.read16(bank, addr)
+            let carryIn: u16 = cpu.flag(.carry) ? 1 : 0
+            let res = (v &<< 1) | carryIn
+            cpu.write8(bank, addr, lo8(res))
+            cpu.write8(bank, addr &+ 1, hi8(res))
+            cpu.setFlag(.carry, (v & 0x8000) != 0)
+            cpu.updateNZ16(res)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func ror_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            let carryIn: u8 = cpu.flag(.carry) ? 0x80 : 0
+            let res = (v >> 1) | carryIn
+            cpu.write8(bank, addr, res)
+            cpu.setFlag(.carry, (v & 0x01) != 0)
+            cpu.updateNZ8(res)
+        } else {
+            let v = cpu.read16(bank, addr)
+            let carryIn: u16 = cpu.flag(.carry) ? 0x8000 : 0
+            let res = (v >> 1) | carryIn
+            cpu.write8(bank, addr, lo8(res))
+            cpu.write8(bank, addr &+ 1, hi8(res))
+            cpu.setFlag(.carry, (v & 0x0001) != 0)
+            cpu.updateNZ16(res)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func stz_mem(cpu: CPU65816, addr: u16, bank: u8, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            cpu.write8(bank, addr, 0)
+        } else {
+            cpu.write8(bank, addr, 0)
+            cpu.write8(bank, addr &+ 1, 0)
+        }
+        return cycles
+    }
+
 
     @inline(__always)
     private static func bitImmediate(cpu: CPU65816, value8: u8, value16: u16) {
