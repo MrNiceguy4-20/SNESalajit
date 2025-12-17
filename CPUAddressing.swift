@@ -105,11 +105,34 @@ enum CPUAddressing {
         return cpu.read16(0x00, ptr)
     }
 
+    // MARK: - Long and relative long
+
+    @inline(__always)
+    static func absLong(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
+        _ = bus
+        let addr = cpu.fetch16()
+        let bank = cpu.fetch8()
+        return (addr, bank)
+    }
+
+    @inline(__always)
+    static func absLongX(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
+        let base = absLong(cpu: cpu, bus: bus)
+        let x = cpu.xIs8() ? u16(u8(truncatingIfNeeded: cpu.r.x)) : cpu.r.x
+        return (base.addr &+ x, base.bank)
+    }
+
     // MARK: - Relative
 
     @inline(__always)
     static func rel8(cpu: CPU65816, bus: Bus) -> Int8 {
         _ = bus
         return Int8(bitPattern: cpu.fetch8())
+    }
+
+    @inline(__always)
+    static func rel16(cpu: CPU65816, bus: Bus) -> Int16 {
+        _ = bus
+        return Int16(bitPattern: cpu.fetch16())
     }
 }

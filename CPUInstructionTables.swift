@@ -158,6 +158,22 @@ enum CPUInstructionTables {
             }
             return 2
 
+
+
+        case 0x5B: // TCD
+            cpu.setDP(cpu.r.a)
+            cpu.updateNZ16(cpu.r.dp)
+            return 2
+
+        case 0x1B: // TCS
+            let value = cpu.r.a
+            if cpu.r.emulationMode {
+                cpu.setSP(0x0100 | (value & 0x00FF))
+            } else {
+                cpu.setSP(value)
+            }
+            cpu.updateNZ16(value)
+            return 2
         case 0xA8: // TAY
             if cpu.xIs8() {
                 let v = cpu.a8()
@@ -478,6 +494,11 @@ enum CPUInstructionTables {
         case 0xF9: // SBC abs,Y
             return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absY(cpu: cpu, bus: bus), cycles: 4)
 
+
+
+        case 0xFF: // SBC long,X
+            let target = CPUAddressing.absLongX(cpu: cpu, bus: bus)
+            return sbc_mem(cpu: cpu, bank: target.bank, addr: target.addr, cycles: 5)
         case 0xC9: // CMP #imm
             if cpu.aIs8() {
                 let v = CPUAddressing.imm8(cpu: cpu, bus: bus)
@@ -750,6 +771,11 @@ enum CPUInstructionTables {
         case 0x99: // STA abs,Y
             return sta_mem(cpu: cpu, addr: CPUAddressing.absY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
 
+
+
+        case 0x8F: // STA long
+            let target = CPUAddressing.absLong(cpu: cpu, bus: bus)
+            return sta_mem(cpu: cpu, addr: target.addr, bank: target.bank, cycles: 5)
         case 0x86: // STX dp
             return stx_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
 
@@ -812,6 +838,12 @@ enum CPUInstructionTables {
             cpu.setPC(cpu.r.pc &+ u16(bitPattern: Int16(rel)))
             return 3
 
+
+
+        case 0x82: // BRL rel16
+            let rel = CPUAddressing.rel16(cpu: cpu, bus: bus)
+            cpu.setPC(cpu.r.pc &+ u16(bitPattern: rel))
+            return 4
         case 0xF0: // BEQ
             return branch(cpu: cpu, bus: bus, cond: cpu.flag(.zero))
 
