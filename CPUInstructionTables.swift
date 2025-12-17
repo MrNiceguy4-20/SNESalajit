@@ -61,6 +61,12 @@ enum CPUInstructionTables {
             cpu.serviceInterrupt(.brk)
             return 7
 
+        case 0x02: // COP
+            // COP is a software interrupt with signature byte.
+            _ = cpu.fetch8()
+            cpu.serviceInterrupt(.cop)
+            return 7
+        
         case 0x40: // RTI
             let p = cpu.pull8()
             cpu.setPFromPull(p)
@@ -158,8 +164,6 @@ enum CPUInstructionTables {
             }
             return 2
 
-
-
         case 0x5B: // TCD
             cpu.setDP(cpu.r.a)
             cpu.updateNZ16(cpu.r.dp)
@@ -174,6 +178,7 @@ enum CPUInstructionTables {
             }
             cpu.updateNZ16(value)
             return 2
+        
         case 0xA8: // TAY
             if cpu.xIs8() {
                 let v = cpu.a8()
@@ -291,8 +296,6 @@ enum CPUInstructionTables {
             }
             return 2
 
-
-
         case 0x0A: // ASL A
             if cpu.aIs8() {
                 let v = cpu.a8()
@@ -360,8 +363,7 @@ enum CPUInstructionTables {
                 cpu.updateNZ16(res)
             }
             return 2
-
-
+        
         // MARK: - ALU (logic + arithmetic)
 
         case 0x09: // ORA #imm
@@ -709,6 +711,10 @@ enum CPUInstructionTables {
         case 0xB2: // LDA (dp)
             return lda_mem(cpu: cpu, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
 
+        case 0xB7: // LDA [dp],Y
+            let target = CPUAddressing.dpIndirectLongY(cpu: cpu, bus: bus)
+            return lda_mem(cpu: cpu, addr: target.addr, bank: target.bank, cycles: 6)
+        
         case 0xB1: // LDA (dp),Y
             return lda_mem(cpu: cpu, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
 
@@ -771,8 +777,10 @@ enum CPUInstructionTables {
         case 0x99: // STA abs,Y
             return sta_mem(cpu: cpu, addr: CPUAddressing.absY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
 
-
-
+        case 0x9F: // STA long,X
+            let target = CPUAddressing.absLongX(cpu: cpu, bus: bus)
+            return sta_mem(cpu: cpu, addr: target.addr, bank: target.bank, cycles: 5)
+        
         case 0x8F: // STA long
             let target = CPUAddressing.absLong(cpu: cpu, bus: bus)
             return sta_mem(cpu: cpu, addr: target.addr, bank: target.bank, cycles: 5)
@@ -804,10 +812,6 @@ enum CPUInstructionTables {
         case 0x9C: // STZ abs
             return stz_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
 
-        case 0x9E: // STZ abs,X
-            return stz_mem(cpu: cpu, addr: CPUAddressing.absX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
-
-
         // MARK: - Flow control
 
         case 0x4C: // JMP abs
@@ -828,6 +832,11 @@ enum CPUInstructionTables {
             cpu.setPC(target)
             return 6
 
+        case 0x82: // BRL rel16
+            let rel = CPUAddressing.rel16(cpu: cpu, bus: bus)
+            cpu.setPC(cpu.r.pc &+ u16(bitPattern: rel))
+            return 4
+        
         case 0x60: // RTS
             let ret = cpu.pull16()
             cpu.setPC(ret &+ 1)
@@ -838,12 +847,6 @@ enum CPUInstructionTables {
             cpu.setPC(cpu.r.pc &+ u16(bitPattern: Int16(rel)))
             return 3
 
-
-
-        case 0x82: // BRL rel16
-            let rel = CPUAddressing.rel16(cpu: cpu, bus: bus)
-            cpu.setPC(cpu.r.pc &+ u16(bitPattern: rel))
-            return 4
         case 0xF0: // BEQ
             return branch(cpu: cpu, bus: bus, cond: cpu.flag(.zero))
 
@@ -879,6 +882,97 @@ enum CPUInstructionTables {
 
     // MARK: - Helpers
 
+    @inline(__always)
+    private static func asl_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            let res = v &<< 1
+            cpu.write8(bank, addr, res)
+            cpu.setFlag(.carry, (v & 0x80) != 0)
+            cpu.updateNZ8(res)
+        } else {
+            let v = cpu.read16(bank, addr)
+            let res = v &<< 1
+            cpu.write8(bank, addr, lo8(res))
+            cpu.write8(bank, addr &+ 1, hi8(res))
+            cpu.setFlag(.carry, (v & 0x8000) != 0)
+            cpu.updateNZ16(res)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func lsr_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            let res = v >> 1
+            cpu.write8(bank, addr, res)
+            cpu.setFlag(.carry, (v & 0x01) != 0)
+            cpu.updateNZ8(res)
+        } else {
+            let v = cpu.read16(bank, addr)
+            let res = v >> 1
+            cpu.write8(bank, addr, lo8(res))
+            cpu.write8(bank, addr &+ 1, hi8(res))
+            cpu.setFlag(.carry, (v & 0x0001) != 0)
+            cpu.updateNZ16(res)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func rol_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            let carryIn: u8 = cpu.flag(.carry) ? 1 : 0
+            let res = (v &<< 1) | carryIn
+            cpu.write8(bank, addr, res)
+            cpu.setFlag(.carry, (v & 0x80) != 0)
+            cpu.updateNZ8(res)
+        } else {
+            let v = cpu.read16(bank, addr)
+            let carryIn: u16 = cpu.flag(.carry) ? 1 : 0
+            let res = (v &<< 1) | carryIn
+            cpu.write8(bank, addr, lo8(res))
+            cpu.write8(bank, addr &+ 1, hi8(res))
+            cpu.setFlag(.carry, (v & 0x8000) != 0)
+            cpu.updateNZ16(res)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func ror_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            let carryIn: u8 = cpu.flag(.carry) ? 0x80 : 0
+            let res = (v >> 1) | carryIn
+            cpu.write8(bank, addr, res)
+            cpu.setFlag(.carry, (v & 0x01) != 0)
+            cpu.updateNZ8(res)
+        } else {
+            let v = cpu.read16(bank, addr)
+            let carryIn: u16 = cpu.flag(.carry) ? 0x8000 : 0
+            let res = (v >> 1) | carryIn
+            cpu.write8(bank, addr, lo8(res))
+            cpu.write8(bank, addr &+ 1, hi8(res))
+            cpu.setFlag(.carry, (v & 0x0001) != 0)
+            cpu.updateNZ16(res)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func stz_mem(cpu: CPU65816, addr: u16, bank: u8, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            cpu.write8(bank, addr, 0)
+        } else {
+            cpu.write8(bank, addr, 0)
+            cpu.write8(bank, addr &+ 1, 0)
+        }
+        return cycles
+    }
+    
     @inline(__always)
     private static func branch(cpu: CPU65816, bus: Bus, cond: Bool) -> Int {
         let rel = CPUAddressing.rel8(cpu: cpu, bus: bus)
@@ -1151,99 +1245,6 @@ enum CPUInstructionTables {
         }
         return cycles
     }
-
-
-    @inline(__always)
-    private static func asl_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
-        if cpu.aIs8() {
-            let v = cpu.read8(bank, addr)
-            let res = v &<< 1
-            cpu.write8(bank, addr, res)
-            cpu.setFlag(.carry, (v & 0x80) != 0)
-            cpu.updateNZ8(res)
-        } else {
-            let v = cpu.read16(bank, addr)
-            let res = v &<< 1
-            cpu.write8(bank, addr, lo8(res))
-            cpu.write8(bank, addr &+ 1, hi8(res))
-            cpu.setFlag(.carry, (v & 0x8000) != 0)
-            cpu.updateNZ16(res)
-        }
-        return cycles
-    }
-
-    @inline(__always)
-    private static func lsr_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
-        if cpu.aIs8() {
-            let v = cpu.read8(bank, addr)
-            let res = v >> 1
-            cpu.write8(bank, addr, res)
-            cpu.setFlag(.carry, (v & 0x01) != 0)
-            cpu.updateNZ8(res)
-        } else {
-            let v = cpu.read16(bank, addr)
-            let res = v >> 1
-            cpu.write8(bank, addr, lo8(res))
-            cpu.write8(bank, addr &+ 1, hi8(res))
-            cpu.setFlag(.carry, (v & 0x0001) != 0)
-            cpu.updateNZ16(res)
-        }
-        return cycles
-    }
-
-    @inline(__always)
-    private static func rol_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
-        if cpu.aIs8() {
-            let v = cpu.read8(bank, addr)
-            let carryIn: u8 = cpu.flag(.carry) ? 1 : 0
-            let res = (v &<< 1) | carryIn
-            cpu.write8(bank, addr, res)
-            cpu.setFlag(.carry, (v & 0x80) != 0)
-            cpu.updateNZ8(res)
-        } else {
-            let v = cpu.read16(bank, addr)
-            let carryIn: u16 = cpu.flag(.carry) ? 1 : 0
-            let res = (v &<< 1) | carryIn
-            cpu.write8(bank, addr, lo8(res))
-            cpu.write8(bank, addr &+ 1, hi8(res))
-            cpu.setFlag(.carry, (v & 0x8000) != 0)
-            cpu.updateNZ16(res)
-        }
-        return cycles
-    }
-
-    @inline(__always)
-    private static func ror_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
-        if cpu.aIs8() {
-            let v = cpu.read8(bank, addr)
-            let carryIn: u8 = cpu.flag(.carry) ? 0x80 : 0
-            let res = (v >> 1) | carryIn
-            cpu.write8(bank, addr, res)
-            cpu.setFlag(.carry, (v & 0x01) != 0)
-            cpu.updateNZ8(res)
-        } else {
-            let v = cpu.read16(bank, addr)
-            let carryIn: u16 = cpu.flag(.carry) ? 0x8000 : 0
-            let res = (v >> 1) | carryIn
-            cpu.write8(bank, addr, lo8(res))
-            cpu.write8(bank, addr &+ 1, hi8(res))
-            cpu.setFlag(.carry, (v & 0x0001) != 0)
-            cpu.updateNZ16(res)
-        }
-        return cycles
-    }
-
-    @inline(__always)
-    private static func stz_mem(cpu: CPU65816, addr: u16, bank: u8, cycles: Int) -> Int {
-        if cpu.aIs8() {
-            cpu.write8(bank, addr, 0)
-        } else {
-            cpu.write8(bank, addr, 0)
-            cpu.write8(bank, addr &+ 1, 0)
-        }
-        return cycles
-    }
-
 
     @inline(__always)
     private static func bitImmediate(cpu: CPU65816, value8: u8, value16: u16) {

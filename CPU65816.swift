@@ -231,7 +231,7 @@ final class CPU65816 {
 
     // MARK: - Interrupt entry (Phase 1 minimal)
 
-    enum InterruptKind { case nmi, irq, brk }
+    enum InterruptKind { case nmi, irq, brk, cop }
 
     func serviceInterrupt(_ kind: InterruptKind) {
         // For Phase 1 we implement emulation-style vectors; native mode also uses bank 0 vectors.
@@ -239,7 +239,7 @@ final class CPU65816 {
         // On 65C816, in emulation mode, pushes PC (hi, lo) then P.
         push8(hi8(r.pc))
         push8(lo8(r.pc))
-        push8(pForPush(brk: kind == .brk))
+        push8(pForPush(brk: kind == .brk || kind == .cop))
 
         setFlag(.irqDis, true)
 
@@ -247,6 +247,7 @@ final class CPU65816 {
         switch kind {
         case .nmi: vectorAddr = 0xFFFA
         case .irq, .brk: vectorAddr = 0xFFFE
+        case .cop: vectorAddr = 0xFFF4
         }
         let lo = read8(0x00, vectorAddr)
         let hi = read8(0x00, vectorAddr &+ 1)

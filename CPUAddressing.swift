@@ -71,6 +71,26 @@ enum CPUAddressing {
         return base &+ y
     }
 
+
+    /// [dp] indirect long. Pointer is a 24-bit address read from direct page.
+    @inline(__always)
+    static func dpIndirectLong(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
+        _ = bus
+        let off = u16(cpu.fetch8())
+        let ptr = cpu.r.dp &+ off
+        let addr = cpu.read16(0x00, ptr)
+        let bank = cpu.read8(0x00, ptr &+ 2)
+        return (addr, bank)
+    }
+
+    /// [dp],Y indirect long. Pointer is 24-bit, then indexed by Y.
+    @inline(__always)
+    static func dpIndirectLongY(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
+        let base = dpIndirectLong(cpu: cpu, bus: bus)
+        let y = cpu.xIs8() ? u16(u8(truncatingIfNeeded: cpu.r.y)) : cpu.r.y
+        return (base.addr &+ y, base.bank)
+    }
+
     // MARK: - Absolute
 
     @inline(__always)
