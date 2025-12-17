@@ -1,12 +1,28 @@
 import Foundation
 
+enum LogComponent: String {
+    case system = "SYSTEM"
+    case cpu = "CPU"
+    case ppu = "PPU"
+    case apu = "APU"
+}
+
 var globalLogHandler: ((String, String) -> Void)?
+
 enum Log {
-    static func info(_ s: String) {
-        globalLogHandler?(s, "INFO")
+    private static func emit(_ message: String, level: String, component: LogComponent) {
+        globalLogHandler?("[\(component.rawValue)] \(message)", level)
     }
 
-    static func warn(_ s: String) {
-        globalLogHandler?(s, "WARN")
+    static func debug(_ s: String, component: LogComponent = .system) {
+        emit(s, level: "DEBUG", component: component)
+    }
+
+    static func info(_ s: String, component: LogComponent = .system) {
+        emit(s, level: "INFO", component: component)
+    }
+
+    static func warn(_ s: String, component: LogComponent = .system) {
+        emit(s, level: "WARN", component: component)
     }
 }

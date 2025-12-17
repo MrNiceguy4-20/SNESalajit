@@ -48,6 +48,8 @@ final class APU {
 
         iplEnabled = true
         spcCycleAcc = 0
+
+        Log.debug("APU reset; RAM cleared and timers reset", component: .apu)
     }
 
     @inline(__always)
@@ -74,9 +76,11 @@ final class APU {
         timers.step(spcCycles: cycles)
 
         for _ in 0..<cycles {
-            let (l,r) = dsp.mix(
+            let (l, r) = dsp.mix(
                 readRAM: { self.ram[$0 & 0xFFFF] },
-                writeRAM: { addr, val in self.ram[addr & 0xFFFF] = u8(val & 0xFF) }
+                writeRAM: { addr, val in
+                    self.ram[addr & 0xFFFF] = u8(val & 0xFF)
+                }
             )
             audio.push(left: l, right: r)
         }
@@ -84,11 +88,13 @@ final class APU {
 
     // MARK: - CPU/APU ports (SNES side)
     func cpuReadPort(_ i: Int) -> u8 { apuToCpu[i & 3] }
+
     func cpuWritePort(_ i: Int, value: u8) {
         let idx = i & 3
         cpuToApuPending[idx] = value
         cpuToApuPendingMask |= (1 << idx)
     }
+
     func apuReadPort(_ i: Int) -> u8 { cpuToApu[i & 3] }
     func apuWritePort(_ i: Int, value: u8) { apuToCpu[i & 3] = value }
 
@@ -130,7 +136,12 @@ final class APU {
         case 0x00F1:
             // Timer enable bits 0..2; bit7 disables IPL mapping (sticky)
             timers.writeControl(value)
-            if (value & 0x80) != 0 { iplEnabled = false }
+            if (value & 0x80) != 0 {
+                if iplEnabled {
+                    Log.debug("APU IPL ROM disabled via $F1", component: .apu)
+                }
+                iplEnabled = false
+            }
 
         case 0x00FA:
             timers.writeTarget(0, value)

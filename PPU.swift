@@ -19,6 +19,7 @@ final class PPU {
         framebuffer = Framebuffer(width: 256, height: 224, fill: 0x000000FF)
         regs.reset()
         mem.reset()
+        Log.debug("PPU reset; VRAM/CGRAM/OAM cleared", component: .ppu)
     }
 
     func step(masterCycles: Int) {
@@ -28,10 +29,12 @@ final class PPU {
     func onEnterVBlank() {
         inVBlank = true
         framebuffer = renderer.renderFrame(regs: regs, mem: mem)
+        Log.debug("PPU entered VBlank; rendered framebuffer", component: .ppu)
     }
 
     func onLeaveVBlank() {
         inVBlank = false
+        Log.debug("PPU left VBlank", component: .ppu)
     }
 
     func readRegister(addr: u16, openBus: u8, video: VideoTiming) -> u8 {

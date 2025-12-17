@@ -12,7 +12,6 @@ final class EmulatorViewModel: ObservableObject {
     @Published var isRunning: Bool = false
     @Published var debugLines: [String] = []
     
-    var globalLogHandler: ((String, String) -> Void)?
     private var emulator = Emulator()
     
     private var timer: Timer?

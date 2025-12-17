@@ -35,6 +35,7 @@ final class CPU65816 {
     private let jit = CPUJIT()
 
     var useJIT: Bool = false
+    private var lastLoggedUseJIT: Bool?
 
     private(set) var nmiLine: Bool = false
     private(set) var irqLine: Bool = false
@@ -56,13 +57,30 @@ final class CPU65816 {
 
         interpreter.reset()
         jit.reset()
+
+        lastLoggedUseJIT = nil
+        Log.debug(String(format: "CPU reset to PB=$%02X PC=$%04X", r.pb, r.pc), component: .cpu)
     }
 
-    func setNMI(_ asserted: Bool) { nmiLine = asserted }
-    func setIRQ(_ asserted: Bool) { irqLine = asserted }
+    func setNMI(_ asserted: Bool) {
+        guard nmiLine != asserted else { return }
+        nmiLine = asserted
+        Log.debug( "NMI line \(asserted ? "asserted" : "cleared")", component: .cpu)
+    }
+    func setIRQ(_ asserted: Bool) {
+        guard irqLine != asserted else { return }
+        irqLine = asserted
+        Log.debug("IRQ line \(asserted ? "asserted" : "cleared")", component: .cpu)
+
+    }
 
     func step(cycles: Int) {
         guard let bus else { return }
+        if lastLoggedUseJIT != useJIT {
+            let mode = useJIT ? "JIT" : "interpreter"
+            Log.debug("Switching CPU stepper to \(mode) mode", component: .cpu)
+            lastLoggedUseJIT = useJIT
+        }
         if useJIT {
             jit.setEnabled(true)
             jit.step(cpu: self, bus: bus, cycles: cycles)
