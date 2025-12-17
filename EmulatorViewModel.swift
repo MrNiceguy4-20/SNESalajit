@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 final class EmulatorViewModel: ObservableObject {
     @Published var framebuffer = Framebuffer(width: 256, height: 224)
     @Published var isRunning: Bool = false
+    @Published var debugLines: [String] = []
 
     private var emulator = Emulator()
 
@@ -28,22 +29,27 @@ final class EmulatorViewModel: ObservableObject {
         }
 
         RunLoop.current.add(timer!, forMode: .common)
+        log("Display timer started")
     }
-    
+
     func stop() {
         timer?.invalidate()
         timer = nil
     }
 
-    func toggleRun() { isRunning.toggle() }
+    func toggleRun() {
+        isRunning.toggle()
+        log("Emulator \(isRunning ? "resumed" : "paused")")
+    }
 
     func reset() {
         emulator.reset()
+        log("Reset emulator state")
     }
 
     func pickROM() {
         let panel = NSOpenPanel()
-        
+
         panel.allowedContentTypes = [.data]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -51,8 +57,10 @@ final class EmulatorViewModel: ObservableObject {
         if panel.runModal() == .OK, let url = panel.url {
             do {
                 try emulator.loadROM(url: url)
+                log("Loaded ROM: \(url.lastPathComponent)")
             } catch {
                 NSLog("ROM load failed: \(error)")
+                log("ROM load failed: \(error.localizedDescription)")
             }
         }
     }
@@ -71,4 +79,24 @@ final class EmulatorViewModel: ObservableObject {
         let fb = emulator.ppu.framebuffer
         self.framebuffer = fb
     }
+
+    private func log(_ message: String) {
+        let timestamp = DateFormatter.cached.string(from: Date())
+        let line = "[\(timestamp)] \(message)"
+        debugLines.append(line)
+
+        if debugLines.count > 200 {
+            debugLines.removeFirst(debugLines.count - 200)
+        }
+
+        print(line)
+    }
+}
+
+private extension DateFormatter {
+    static let cached: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }()
 }

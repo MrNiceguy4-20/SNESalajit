@@ -57,7 +57,7 @@ final class Bus {
         return c
     }
 
-    var isDMASstallingCPU: Bool { dmaStallMasterCycles > 0 }
+    var isDMAStallingCPU: Bool { dmaStallMasterCycles > 0 }
 
     // MARK: - Timekeeping
 

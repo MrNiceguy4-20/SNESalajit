@@ -22,8 +22,40 @@ struct ContentView: View {
                 }
                 .keyboardShortcut("o", modifiers: [.command])
             }
+
+            DebugConsoleView(lines: vm.debugLines)
         }
         .padding(16)
         .onAppear { vm.startIfNeeded() }
+    }
+}
+
+private struct DebugConsoleView: View {
+    var lines: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Debug Output")
+                .font(.headline)
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(lines.indices, id: \.self) { idx in
+                        Text(verbatim: lines[idx])
+                            .font(.system(size: 11, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 140)
+            .background(Color(NSColor.textBackgroundColor))
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
