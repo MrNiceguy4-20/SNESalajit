@@ -21,6 +21,14 @@ struct ContentView: View {
                     vm.pickROM()
                 }
                 .keyboardShortcut("o", modifiers: [.command])
+
+                Picker("Log Level", selection: $vm.logLevel) {
+                    ForEach(LogLevel.allCases) { level in
+                        Text(level.rawValue).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 260)
             }
 
             DebugConsoleView(lines: vm.debugLines)
