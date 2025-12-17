@@ -11,6 +11,8 @@ final class PPU {
     private let renderer = PPURenderer()
 
     private var inVBlank: Bool = false
+    private var frameCounter: Int = 0
+    private let vblankLogInterval = 60
 
     func attach(bus: Bus) { self.bus = bus }
 
@@ -19,6 +21,7 @@ final class PPU {
         framebuffer = Framebuffer(width: 256, height: 224, fill: 0x000000FF)
         regs.reset()
         mem.reset()
+        frameCounter = 0
         Log.debug("PPU reset; VRAM/CGRAM/OAM cleared", component: .ppu)
     }
 
@@ -29,12 +32,17 @@ final class PPU {
     func onEnterVBlank() {
         inVBlank = true
         framebuffer = renderer.renderFrame(regs: regs, mem: mem)
-        Log.debug("PPU entered VBlank; rendered framebuffer", component: .ppu)
+        frameCounter &+= 1
+        if frameCounter % vblankLogInterval == 0 {
+            Log.debug("PPU entered VBlank; rendered framebuffer (\(frameCounter) frames)", component: .ppu)
+        }
     }
 
     func onLeaveVBlank() {
         inVBlank = false
-        Log.debug("PPU left VBlank", component: .ppu)
+        if frameCounter % vblankLogInterval == 0 {
+            Log.debug("PPU left VBlank", component: .ppu)
+        }
     }
 
     func readRegister(addr: u16, openBus: u8, video: VideoTiming) -> u8 {
