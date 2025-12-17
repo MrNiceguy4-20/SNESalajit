@@ -207,6 +207,320 @@ enum CPUInstructionTables {
             }
             return 2
 
+        // MARK: - Increment/Decrement
+
+        case 0xE8: // INX
+            if cpu.xIs8() {
+                let v = cpu.x8() &+ 1
+                cpu.setX8(v)
+                cpu.updateNZ8(v)
+            } else {
+                let v = cpu.r.x &+ 1
+                cpu.setX(v)
+                cpu.updateNZ16(v)
+            }
+            return 2
+
+        case 0xC8: // INY
+            if cpu.xIs8() {
+                let v = cpu.y8() &+ 1
+                cpu.setY8(v)
+                cpu.updateNZ8(v)
+            } else {
+                let v = cpu.r.y &+ 1
+                cpu.setY(v)
+                cpu.updateNZ16(v)
+            }
+            return 2
+
+        case 0xCA: // DEX
+            if cpu.xIs8() {
+                let v = cpu.x8() &- 1
+                cpu.setX8(v)
+                cpu.updateNZ8(v)
+            } else {
+                let v = cpu.r.x &- 1
+                cpu.setX(v)
+                cpu.updateNZ16(v)
+            }
+            return 2
+
+        case 0x88: // DEY
+            if cpu.xIs8() {
+                let v = cpu.y8() &- 1
+                cpu.setY8(v)
+                cpu.updateNZ8(v)
+            } else {
+                let v = cpu.r.y &- 1
+                cpu.setY(v)
+                cpu.updateNZ16(v)
+            }
+            return 2
+
+        case 0x1A: // INC A
+            if cpu.aIs8() {
+                let v = cpu.a8() &+ 1
+                cpu.setA8(v)
+                cpu.updateNZ8(v)
+            } else {
+                let v = cpu.r.a &+ 1
+                cpu.setA(v)
+                cpu.updateNZ16(v)
+            }
+            return 2
+
+        case 0x3A: // DEC A
+            if cpu.aIs8() {
+                let v = cpu.a8() &- 1
+                cpu.setA8(v)
+                cpu.updateNZ8(v)
+            } else {
+                let v = cpu.r.a &- 1
+                cpu.setA(v)
+                cpu.updateNZ16(v)
+            }
+            return 2
+
+
+        // MARK: - ALU (logic + arithmetic)
+
+        case 0x09: // ORA #imm
+            if cpu.aIs8() {
+                let v = CPUAddressing.imm8(cpu: cpu, bus: bus)
+                ora(cpu: cpu, value8: v, value16: 0)
+                return 2
+            } else {
+                let v = CPUAddressing.imm16(cpu: cpu, bus: bus)
+                ora(cpu: cpu, value8: 0, value16: v)
+                return 3
+            }
+
+        case 0x05: // ORA dp
+            return ora_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+
+        case 0x15: // ORA dp,X
+            return ora_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x0D: // ORA abs
+            return ora_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x1D: // ORA abs,X
+            return ora_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x19: // ORA abs,Y
+            return ora_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absY(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x29: // AND #imm
+            if cpu.aIs8() {
+                let v = CPUAddressing.imm8(cpu: cpu, bus: bus)
+                and(cpu: cpu, value8: v, value16: 0)
+                return 2
+            } else {
+                let v = CPUAddressing.imm16(cpu: cpu, bus: bus)
+                and(cpu: cpu, value8: 0, value16: v)
+                return 3
+            }
+
+        case 0x25: // AND dp
+            return and_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+
+        case 0x35: // AND dp,X
+            return and_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x2D: // AND abs
+            return and_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x3D: // AND abs,X
+            return and_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x39: // AND abs,Y
+            return and_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absY(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x49: // EOR #imm
+            if cpu.aIs8() {
+                let v = CPUAddressing.imm8(cpu: cpu, bus: bus)
+                eor(cpu: cpu, value8: v, value16: 0)
+                return 2
+            } else {
+                let v = CPUAddressing.imm16(cpu: cpu, bus: bus)
+                eor(cpu: cpu, value8: 0, value16: v)
+                return 3
+            }
+
+        case 0x45: // EOR dp
+            return eor_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+
+        case 0x55: // EOR dp,X
+            return eor_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x4D: // EOR abs
+            return eor_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x5D: // EOR abs,X
+            return eor_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x59: // EOR abs,Y
+            return eor_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absY(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x69: // ADC #imm
+            if cpu.aIs8() {
+                let v = CPUAddressing.imm8(cpu: cpu, bus: bus)
+                adc(cpu: cpu, value8: v, value16: 0)
+                return 2
+            } else {
+                let v = CPUAddressing.imm16(cpu: cpu, bus: bus)
+                adc(cpu: cpu, value8: 0, value16: v)
+                return 3
+            }
+
+        case 0x65: // ADC dp
+            return adc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+
+        case 0x75: // ADC dp,X
+            return adc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x6D: // ADC abs
+            return adc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x7D: // ADC abs,X
+            return adc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x79: // ADC abs,Y
+            return adc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absY(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0xE9, 0xEB: // SBC #imm
+            if cpu.aIs8() {
+                let v = CPUAddressing.imm8(cpu: cpu, bus: bus)
+                sbc(cpu: cpu, value8: v, value16: 0)
+                return 2
+            } else {
+                let v = CPUAddressing.imm16(cpu: cpu, bus: bus)
+                sbc(cpu: cpu, value8: 0, value16: v)
+                return 3
+            }
+
+        case 0xE5: // SBC dp
+            return sbc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+
+        case 0xF5: // SBC dp,X
+            return sbc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0xED: // SBC abs
+            return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0xFD: // SBC abs,X
+            return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0xF9: // SBC abs,Y
+            return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absY(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0xC9: // CMP #imm
+            if cpu.aIs8() {
+                let v = CPUAddressing.imm8(cpu: cpu, bus: bus)
+                cmpA(cpu: cpu, value8: v, value16: 0)
+                return 2
+            } else {
+                let v = CPUAddressing.imm16(cpu: cpu, bus: bus)
+                cmpA(cpu: cpu, value8: 0, value16: v)
+                return 3
+            }
+
+        case 0xC5: // CMP dp
+            return cmpA_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+
+        case 0xD5: // CMP dp,X
+            return cmpA_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0xCD: // CMP abs
+            return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0xDD: // CMP abs,X
+            return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0xD9: // CMP abs,Y
+            return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absY(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0xE0: // CPX #imm
+            if cpu.xIs8() {
+                let v = CPUAddressing.imm8(cpu: cpu, bus: bus)
+                cmpX(cpu: cpu, value8: v, value16: 0)
+                return 2
+            } else {
+                let v = CPUAddressing.imm16(cpu: cpu, bus: bus)
+                cmpX(cpu: cpu, value8: 0, value16: v)
+                return 3
+            }
+
+        case 0xE4: // CPX dp
+            return cmpX_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+
+        case 0xEC: // CPX abs
+            return cmpX_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0xC0: // CPY #imm
+            if cpu.xIs8() {
+                let v = CPUAddressing.imm8(cpu: cpu, bus: bus)
+                cmpY(cpu: cpu, value8: v, value16: 0)
+                return 2
+            } else {
+                let v = CPUAddressing.imm16(cpu: cpu, bus: bus)
+                cmpY(cpu: cpu, value8: 0, value16: v)
+                return 3
+            }
+
+        case 0xC4: // CPY dp
+            return cmpY_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+
+        case 0xCC: // CPY abs
+            return cmpY_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0xE6: // INC dp
+            return inc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+
+        case 0xF6: // INC dp,X
+            return inc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0xEE: // INC abs
+            return inc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0xFE: // INC abs,X
+            return inc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+
+        case 0xC6: // DEC dp
+            return dec_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+
+        case 0xD6: // DEC dp,X
+            return dec_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0xCE: // DEC abs
+            return dec_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+
+        case 0xDE: // DEC abs,X
+            return dec_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+
+        case 0x89: // BIT #imm
+            if cpu.aIs8() {
+                let v = CPUAddressing.imm8(cpu: cpu, bus: bus)
+                bitImmediate(cpu: cpu, value8: v, value16: 0)
+                return 2
+            } else {
+                let v = CPUAddressing.imm16(cpu: cpu, bus: bus)
+                bitImmediate(cpu: cpu, value8: 0, value16: v)
+                return 3
+            }
+
+        case 0x24: // BIT dp
+            return bit_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+
+        case 0x34: // BIT dp,X
+            return bit_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x2C: // BIT abs
+            return bit_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+
+        case 0x3C: // BIT abs,X
+            return bit_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
+
         // MARK: - Loads
 
         case 0xA9: // LDA #imm
@@ -389,6 +703,298 @@ enum CPUInstructionTables {
             return 2
         }
     }
+
+    // MARK: - ALU helpers
+
+    @inline(__always)
+    private static func ora(cpu: CPU65816, value8: u8, value16: u16) {
+        if cpu.aIs8() {
+            let res = cpu.a8() | value8
+            cpu.setA8(res)
+            cpu.updateNZ8(res)
+        } else {
+            let res = cpu.r.a | value16
+            cpu.setA(res)
+            cpu.updateNZ16(res)
+        }
+    }
+
+    @inline(__always)
+    private static func ora_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            ora(cpu: cpu, value8: v, value16: 0)
+        } else {
+            let v = cpu.read16(bank, addr)
+            ora(cpu: cpu, value8: 0, value16: v)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func and(cpu: CPU65816, value8: u8, value16: u16) {
+        if cpu.aIs8() {
+            let res = cpu.a8() & value8
+            cpu.setA8(res)
+            cpu.updateNZ8(res)
+        } else {
+            let res = cpu.r.a & value16
+            cpu.setA(res)
+            cpu.updateNZ16(res)
+        }
+    }
+
+    @inline(__always)
+    private static func and_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            and(cpu: cpu, value8: v, value16: 0)
+        } else {
+            let v = cpu.read16(bank, addr)
+            and(cpu: cpu, value8: 0, value16: v)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func eor(cpu: CPU65816, value8: u8, value16: u16) {
+        if cpu.aIs8() {
+            let res = cpu.a8() ^ value8
+            cpu.setA8(res)
+            cpu.updateNZ8(res)
+        } else {
+            let res = cpu.r.a ^ value16
+            cpu.setA(res)
+            cpu.updateNZ16(res)
+        }
+    }
+
+    @inline(__always)
+    private static func eor_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            eor(cpu: cpu, value8: v, value16: 0)
+        } else {
+            let v = cpu.read16(bank, addr)
+            eor(cpu: cpu, value8: 0, value16: v)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func adc(cpu: CPU65816, value8: u8, value16: u16) {
+        if cpu.aIs8() {
+            let a = cpu.a8()
+            let carry: u16 = cpu.flag(.carry) ? 1 : 0
+            let result = u16(a) &+ u16(value8) &+ carry
+            let res8 = u8(truncatingIfNeeded: result)
+            cpu.setA8(res8)
+            cpu.setFlag(.carry, result > 0xFF)
+            let overflow = (~(a ^ value8) & (a ^ res8) & 0x80) != 0
+            cpu.setFlag(.overflow, overflow)
+            cpu.updateNZ8(res8)
+        } else {
+            let a = cpu.r.a
+            let carry: u32 = cpu.flag(.carry) ? 1 : 0
+            let result = u32(a) &+ u32(value16) &+ carry
+            let res16 = u16(truncatingIfNeeded: result)
+            cpu.setA(res16)
+            cpu.setFlag(.carry, result > 0xFFFF)
+            let overflow = (~(a ^ value16) & (a ^ res16) & 0x8000) != 0
+            cpu.setFlag(.overflow, overflow)
+            cpu.updateNZ16(res16)
+        }
+    }
+
+    @inline(__always)
+    private static func adc_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            adc(cpu: cpu, value8: v, value16: 0)
+        } else {
+            let v = cpu.read16(bank, addr)
+            adc(cpu: cpu, value8: 0, value16: v)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func sbc(cpu: CPU65816, value8: u8, value16: u16) {
+        if cpu.aIs8() {
+            let a = cpu.a8()
+            let carry: Int = cpu.flag(.carry) ? 0 : 1
+            let result = Int(a) - Int(value8) - carry
+            let res8 = u8(truncatingIfNeeded: result)
+            cpu.setA8(res8)
+            cpu.setFlag(.carry, result >= 0)
+            let overflow = ((a ^ value8) & (a ^ res8) & 0x80) != 0
+            cpu.setFlag(.overflow, overflow)
+            cpu.updateNZ8(res8)
+        } else {
+            let a = cpu.r.a
+            let carry: Int = cpu.flag(.carry) ? 0 : 1
+            let result = Int(a) - Int(value16) - carry
+            let res16 = u16(truncatingIfNeeded: result)
+            cpu.setA(res16)
+            cpu.setFlag(.carry, result >= 0)
+            let overflow = ((a ^ value16) & (a ^ res16) & 0x8000) != 0
+            cpu.setFlag(.overflow, overflow)
+            cpu.updateNZ16(res16)
+        }
+    }
+
+    @inline(__always)
+    private static func sbc_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            sbc(cpu: cpu, value8: v, value16: 0)
+        } else {
+            let v = cpu.read16(bank, addr)
+            sbc(cpu: cpu, value8: 0, value16: v)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func cmpA(cpu: CPU65816, value8: u8, value16: u16) {
+        if cpu.aIs8() {
+            let a = cpu.a8()
+            let result = u16(a) &- u16(value8)
+            cpu.setFlag(.carry, a >= value8)
+            cpu.updateNZ8(u8(truncatingIfNeeded: result))
+        } else {
+            let a = cpu.r.a
+            let result = a &- value16
+            cpu.setFlag(.carry, a >= value16)
+            cpu.updateNZ16(result)
+        }
+    }
+
+    @inline(__always)
+    private static func cmpA_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            cmpA(cpu: cpu, value8: v, value16: 0)
+        } else {
+            let v = cpu.read16(bank, addr)
+            cmpA(cpu: cpu, value8: 0, value16: v)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func cmpX(cpu: CPU65816, value8: u8, value16: u16) {
+        if cpu.xIs8() {
+            let x = cpu.x8()
+            let result = u16(x) &- u16(value8)
+            cpu.setFlag(.carry, x >= value8)
+            cpu.updateNZ8(u8(truncatingIfNeeded: result))
+        } else {
+            let x = cpu.r.x
+            let result = x &- value16
+            cpu.setFlag(.carry, x >= value16)
+            cpu.updateNZ16(result)
+        }
+    }
+
+    @inline(__always)
+    private static func cmpX_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.xIs8() {
+            let v = cpu.read8(bank, addr)
+            cmpX(cpu: cpu, value8: v, value16: 0)
+        } else {
+            let v = cpu.read16(bank, addr)
+            cmpX(cpu: cpu, value8: 0, value16: v)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func cmpY(cpu: CPU65816, value8: u8, value16: u16) {
+        if cpu.xIs8() {
+            let y = cpu.y8()
+            let result = u16(y) &- u16(value8)
+            cpu.setFlag(.carry, y >= value8)
+            cpu.updateNZ8(u8(truncatingIfNeeded: result))
+        } else {
+            let y = cpu.r.y
+            let result = y &- value16
+            cpu.setFlag(.carry, y >= value16)
+            cpu.updateNZ16(result)
+        }
+    }
+
+    @inline(__always)
+    private static func cmpY_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.xIs8() {
+            let v = cpu.read8(bank, addr)
+            cmpY(cpu: cpu, value8: v, value16: 0)
+        } else {
+            let v = cpu.read16(bank, addr)
+            cmpY(cpu: cpu, value8: 0, value16: v)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func inc_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr) &+ 1
+            cpu.write8(bank, addr, v)
+            cpu.updateNZ8(v)
+        } else {
+            let v = cpu.read16(bank, addr) &+ 1
+            cpu.write8(bank, addr, lo8(v))
+            cpu.write8(bank, addr &+ 1, hi8(v))
+            cpu.updateNZ16(v)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func dec_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr) &- 1
+            cpu.write8(bank, addr, v)
+            cpu.updateNZ8(v)
+        } else {
+            let v = cpu.read16(bank, addr) &- 1
+            cpu.write8(bank, addr, lo8(v))
+            cpu.write8(bank, addr &+ 1, hi8(v))
+            cpu.updateNZ16(v)
+        }
+        return cycles
+    }
+
+    @inline(__always)
+    private static func bitImmediate(cpu: CPU65816, value8: u8, value16: u16) {
+        if cpu.aIs8() {
+            let res = cpu.a8() & value8
+            cpu.setFlag(.zero, res == 0)
+        } else {
+            let res = cpu.r.a & value16
+            cpu.setFlag(.zero, res == 0)
+        }
+    }
+
+    @inline(__always)
+    private static func bit_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
+        if cpu.aIs8() {
+            let v = cpu.read8(bank, addr)
+            let res = cpu.a8() & v
+            cpu.setFlag(.zero, res == 0)
+            cpu.setFlag(.negative, (v & 0x80) != 0)
+            cpu.setFlag(.overflow, (v & 0x40) != 0)
+        } else {
+            let v = cpu.read16(bank, addr)
+            let res = cpu.r.a & v
+            cpu.setFlag(.zero, res == 0)
+            cpu.setFlag(.negative, (v & 0x8000) != 0)
+            cpu.setFlag(.overflow, (v & 0x4000) != 0)
+        }
+        return cycles
+    }
+
 
     @inline(__always)
     private static func lda_mem(cpu: CPU65816, addr: u16, bank: u8, cycles: Int) -> Int {

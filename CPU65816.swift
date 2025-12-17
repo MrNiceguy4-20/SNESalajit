@@ -215,7 +215,8 @@ final class CPU65816 {
     
     @inline(__always) func setSP(_ v: u16) { r.sp = v; if r.emulationMode { forceEmulationFlags() } }
     @inline(__always) func setSPLo(_ v: u8) { r.sp = (r.sp & 0xFF00) | u16(v); if r.emulationMode { forceEmulationFlags() } }
-@inline(__always) func a8() -> u8 { u8(truncatingIfNeeded: r.a) }
+
+    @inline(__always) func a8() -> u8 { u8(truncatingIfNeeded: r.a) }
     @inline(__always) func x8() -> u8 { u8(truncatingIfNeeded: r.x) }
     @inline(__always) func y8() -> u8 { u8(truncatingIfNeeded: r.y) }
 

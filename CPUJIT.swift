@@ -6,20 +6,45 @@ final class CPUJIT {
     private let execMem = JITExecutableMemory()
     private let assembler = X64Assembler()
     private var enabled: Bool = false
+    private var cycleDebt: Int = 0
+    private var nmiLatched: Bool = false
 
     func reset() {
         enabled = false
         execMem.reset()
+        cycleDebt = 0
+        nmiLatched = false
     }
 
     func step(cpu: CPU65816, bus: Bus, cycles: Int) {
-        _ = bus
-        // Phase 0/1/2: no actual JIT yet.
-        var debt = cycles
-        while debt > 0 {
+        cycleDebt += cycles
+
+        // Phase 1/2 shim: execute using the same path as the interpreter but keep the JIT
+        // wrapper active so we can layer hot block compilation later.
+        while cycleDebt > 0 {
+
+            // NMI: service on rising edge of nmiLine.
+            if cpu.nmiLine {
+                if !nmiLatched {
+                    nmiLatched = true
+                    cpu.serviceInterrupt(.nmi)
+                    cycleDebt -= 7
+                    continue
+                }
+            } else {
+                nmiLatched = false
+            }
+
+            // IRQ: level-sensitive and gated by I flag.
+            if cpu.irqLine && !cpu.flag(.irqDis) {
+                cpu.serviceInterrupt(.irq)
+                cycleDebt -= 7
+                continue
+            }
+
             let opcode = cpu.fetchOpcode()
-            _ = opcode
-            debt -= 2
+            let cost = CPUInstructionTables.execute(opcode: opcode, cpu: cpu, bus: bus)
+            cycleDebt -= max(1, cost)
         }
     }
 }
