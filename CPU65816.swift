@@ -1,10 +1,5 @@
 import Foundation
 
-/// 65C816 CPU core (Phase 1).
-///
-/// Encapsulation rule:
-/// - Other files must NOT mutate `r` directly (because `r` is `private(set)`).
-/// - Use the helpers below (fetch/stack/read/write/set flags) so later we can swap in JIT/register shadowing safely.
 final class CPU65816 {
     struct Registers {
         var a: u16 = 0
@@ -15,10 +10,7 @@ final class CPU65816 {
         var db: u8 = 0
         var pb: u8 = 0
         var pc: u16 = 0
-        /// Processor status register (P).
-        /// Note: we store the raw bits; bit5 is kept set when pushing/pulling in emulation paths.
         var p: Status = .init()
-        /// Emulation mode (E flag). When true, M and X are forced to 1 (8-bit A and 8-bit index regs).
         var emulationMode: Bool = true
     }
 
@@ -30,15 +22,13 @@ final class CPU65816 {
         static let zero     = Status(rawValue: 1 << 1)
         static let irqDis   = Status(rawValue: 1 << 2)
         static let decimal  = Status(rawValue: 1 << 3)
-        static let index8   = Status(rawValue: 1 << 4) // X flag
-        static let mem8     = Status(rawValue: 1 << 5) // M flag
+        static let index8   = Status(rawValue: 1 << 4)
+        static let mem8     = Status(rawValue: 1 << 5)
         static let overflow = Status(rawValue: 1 << 6)
         static let negative = Status(rawValue: 1 << 7)
     }
 
-    // Read-only to other files; mutate via helpers below.
     private(set) var r = Registers()
-
     private weak var bus: Bus?
 
     private let interpreter = CPUInterpreter()
@@ -46,7 +36,6 @@ final class CPU65816 {
 
     var useJIT: Bool = false
 
-    // Lines asserted by the bus.
     private(set) var nmiLine: Bool = false
     private(set) var irqLine: Bool = false
 
@@ -54,12 +43,9 @@ final class CPU65816 {
 
     func reset() {
         r = Registers()
-
-        // Reset starts in emulation mode.
         r.emulationMode = true
         forceEmulationFlags()
 
-        // Read reset vector from $00:FFFC/FFFD (emulation reset).
         let lo = read8(0x00, 0xFFFC)
         let hi = read8(0x00, 0xFFFD)
         r.pb = 0x00
@@ -78,8 +64,10 @@ final class CPU65816 {
     func step(cycles: Int) {
         guard let bus else { return }
         if useJIT {
+            jit.setEnabled(true)
             jit.step(cpu: self, bus: bus, cycles: cycles)
         } else {
+            jit.setEnabled(false)
             interpreter.step(cpu: self, bus: bus, cycles: cycles)
         }
     }

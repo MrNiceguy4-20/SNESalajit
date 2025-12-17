@@ -1,7 +1,5 @@
 import Foundation
 
-/// JIT wrapper. Phase 5 will generate x86_64 for hot basic blocks.
-/// For now, it uses CPU65816 helpers to keep register mutations encapsulated.
 final class CPUJIT {
     private let execMem = JITExecutableMemory()
     private let assembler = X64Assembler()
@@ -16,7 +14,19 @@ final class CPUJIT {
         nmiLatched = false
     }
 
+    func setEnabled(_ flag: Bool) {
+        if enabled == flag { return }
+        enabled = flag
+        if !flag {
+            // Flush any partial JIT state so re-enabling starts clean.
+            cycleDebt = 0
+            nmiLatched = false
+            execMem.reset()
+        }
+    }
+
     func step(cpu: CPU65816, bus: Bus, cycles: Int) {
+        guard enabled else { return }
         cycleDebt += cycles
 
         // Phase 1/2 shim: execute using the same path as the interpreter but keep the JIT

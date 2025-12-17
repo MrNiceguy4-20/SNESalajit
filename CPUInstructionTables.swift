@@ -1,11 +1,5 @@
 import Foundation
 
-/// Phase 1: minimal opcode decode/execute for bring-up.
-/// Returns an approximate cycle count for the executed instruction.
-///
-/// IMPORTANT:
-/// - Do not mutate cpu.r directly (outside of CPU65816).
-/// - Use CPU65816 helpers to read/write/fetch/stack/flags.
 enum CPUInstructionTables {
 
     @inline(__always)
@@ -568,6 +562,15 @@ enum CPUInstructionTables {
         case 0xB5: // LDA dp,X
             return lda_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
 
+        case 0xA1: // LDA (dp,X)
+            return lda_mem(cpu: cpu, addr: CPUAddressing.dpIndirectX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
+
+        case 0xB2: // LDA (dp)
+            return lda_mem(cpu: cpu, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
+
+        case 0xB1: // LDA (dp),Y
+            return lda_mem(cpu: cpu, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
+
         case 0xAD: // LDA abs
             return lda_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
 
@@ -609,6 +612,15 @@ enum CPUInstructionTables {
         case 0x95: // STA dp,X
             return sta_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
 
+        case 0x81: // STA (dp,X)
+            return sta_mem(cpu: cpu, addr: CPUAddressing.dpIndirectX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
+
+        case 0x92: // STA (dp)
+            return sta_mem(cpu: cpu, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
+
+        case 0x91: // STA (dp),Y
+            return sta_mem(cpu: cpu, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
+
         case 0x8D: // STA abs
             return sta_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
 
@@ -624,8 +636,14 @@ enum CPUInstructionTables {
         case 0x8E: // STX abs
             return stx_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
 
+        case 0x96: // STX dp,Y
+            return stx_mem(cpu: cpu, addr: CPUAddressing.dpY(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
+
         case 0x84: // STY dp
             return sty_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
+
+        case 0x94: // STY dp,X
+            return sty_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
 
         case 0x8C: // STY abs
             return sty_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)

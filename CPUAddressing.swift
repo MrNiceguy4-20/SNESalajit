@@ -1,10 +1,5 @@
 import Foundation
 
-/// Addressing mode helpers.
-///
-/// Encapsulation:
-/// - Must not mutate cpu.r directly.
-/// - Use cpu.fetch8()/fetch16()/advancePC() and cpu read/write helpers.
 enum CPUAddressing {
 
     // MARK: - Immediate
@@ -46,6 +41,36 @@ enum CPUAddressing {
         return cpu.r.dp &+ off &+ y
     }
 
+    /// (dp) indirect. Pointer is read from direct page; data is fetched using DB as bank.
+    @inline(__always)
+    static func dpIndirect(cpu: CPU65816, bus: Bus) -> u16 {
+        _ = bus
+        let off = u16(cpu.fetch8())
+        let ptr = cpu.r.dp &+ off
+        return cpu.read16(0x00, ptr)
+    }
+
+    /// (dp,X) indirect. Pointer offset is X-indexed within direct page.
+    @inline(__always)
+    static func dpIndirectX(cpu: CPU65816, bus: Bus) -> u16 {
+        _ = bus
+        let off = u16(cpu.fetch8())
+        let x = cpu.xIs8() ? u16(u8(truncatingIfNeeded: cpu.r.x)) : cpu.r.x
+        let ptr = cpu.r.dp &+ off &+ x
+        return cpu.read16(0x00, ptr)
+    }
+
+    /// (dp),Y indirect. Pointer is read from direct page then Y-indexed.
+    @inline(__always)
+    static func dpIndirectY(cpu: CPU65816, bus: Bus) -> u16 {
+        _ = bus
+        let off = u16(cpu.fetch8())
+        let ptr = cpu.r.dp &+ off
+        let base = cpu.read16(0x00, ptr)
+        let y = cpu.xIs8() ? u16(u8(truncatingIfNeeded: cpu.r.y)) : cpu.r.y
+        return base &+ y
+    }
+
     // MARK: - Absolute
 
     @inline(__always)
@@ -77,7 +102,6 @@ enum CPUAddressing {
     static func absIndirect(cpu: CPU65816, bus: Bus) -> u16 {
         let ptr = cpu.fetch16()
         _ = bus
-        // SNES/65C816: indirect reads from bank 0 for JMP (abs) in emulation paths; good enough for Phase 1.
         return cpu.read16(0x00, ptr)
     }
 
