@@ -4,9 +4,9 @@ import Foundation
 struct Framebuffer: Sendable {
     let width: Int
     let height: Int
-    var pixels: [UInt32] // RGBA8 packed (0xRRGGBBAA)
+    var pixels: [UInt32] // RGBA8 little-endian (memory layout [R, G, B, A])
 
-    init(width: Int, height: Int, fill: UInt32 = 0x000000FF) {
+    init(width: Int, height: Int, fill: UInt32 = .rgba(0, 0, 0, 0xFF)) {
         self.width = width
         self.height = height
         self.pixels = Array(repeating: fill, count: width * height)

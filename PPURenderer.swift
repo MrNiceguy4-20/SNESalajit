@@ -7,7 +7,7 @@ import Foundation
 final class PPURenderer {
 
     func renderFrame(regs: PPURegisters, mem: PPUMemory) -> Framebuffer {
-        var fb = Framebuffer(width: 256, height: 224, fill: 0x000000FF)
+        var fb = Framebuffer(width: 256, height: 224, fill: .rgba(0, 0, 0, 0xFF))
 
         // Reset overflow flags for the frame (latched if any scanline overflows).
         regs.clearObjOverflowFlags()
@@ -428,17 +428,17 @@ final class PPURenderer {
     private func applyBrightness(_ rgba: u32, brightness: u8) -> u32 {
         let br = Int(brightness & 0x0F)
         if br >= 15 { return rgba }
-        if br == 0 { return 0x000000FF }
+        if br == 0 { return .rgba(0, 0, 0, 0xFF) }
 
-        let r = Int((rgba >> 24) & 0xFF)
-        let g = Int((rgba >> 16) & 0xFF)
-        let b = Int((rgba >> 8) & 0xFF)
-        let a = Int(rgba & 0xFF)
+        let r = Int(rgba & 0xFF)
+        let g = Int((rgba >> 8) & 0xFF)
+        let b = Int((rgba >> 16) & 0xFF)
+        let a = Int((rgba >> 24) & 0xFF)
 
         let rr = (r * br) / 15
         let gg = (g * br) / 15
         let bb = (b * br) / 15
 
-        return (u32(rr) << 24) | (u32(gg) << 16) | (u32(bb) << 8) | u32(a)
+        return .rgba(u8(rr), u8(gg), u8(bb), u8(a))
     }
 }

@@ -10,6 +10,7 @@ final class PPU {
     let mem = PPUMemory()
     private let renderer = PPURenderer()
 
+    private var timing = VideoTiming()
     private var inVBlank: Bool = false
     private var frameCounter: Int = 0
     private let vblankLogInterval = 60
@@ -18,24 +19,47 @@ final class PPU {
 
     func reset() {
         inVBlank = false
-        framebuffer = Framebuffer(width: 256, height: 224, fill: 0x000000FF)
+        framebuffer = Framebuffer(width: 256, height: 224, fill: .rgba(0, 0, 0, 0xFF))
         regs.reset()
+        timing.reset()
         mem.reset()
         frameCounter = 0
         Log.debug("PPU reset; VRAM/CGRAM/OAM cleared", component: .ppu)
     }
 
     func step(masterCycles: Int) {
-        _ = masterCycles
+        var cycles = masterCycles
+
+        while cycles > 0 {
+            // Advance one dot
+            timing.dot += 1
+            cycles -= VideoTiming.masterCyclesPerDot
+
+            if timing.dot >= VideoTiming.dotsPerScanline {
+                timing.dot = 0
+                timing.scanline += 1
+
+                // Enter VBlank
+                if timing.scanline == VideoTiming.vblankStartScanline {
+                    timing.inVBlank = true
+                    onEnterVBlank()
+                }
+
+                // End of frame
+                if timing.scanline >= VideoTiming.totalScanlines {
+                    timing.scanline = 0
+                    timing.inVBlank = false
+                    onLeaveVBlank()
+                }
+            }
+        }
     }
+
 
     func onEnterVBlank() {
         inVBlank = true
         framebuffer = renderer.renderFrame(regs: regs, mem: mem)
-        frameCounter &+= 1
-        if frameCounter % vblankLogInterval == 0 {
-            Log.debug("PPU entered VBlank; rendered framebuffer (\(frameCounter) frames)", component: .ppu)
-        }
+        Log.debug("PPU frame rendered", component: .ppu)
     }
 
     func onLeaveVBlank() {
