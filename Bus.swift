@@ -93,18 +93,16 @@ final class Bus {
             video.scanline = 0
         }
 
-        let nowVBlank = (video.scanline >= VideoTiming.visibleScanlines)
+        let nowVBlank = (video.scanline >= VideoTiming.vblankStartScanline)
         if nowVBlank && !video.inVBlank {
             video.inVBlank = true
             video.didEnterVBlank = true
             irq.onEnterVBlank()
             if irq.autoJoypadEnable { beginAutoJoypad() }
-            ppu?.onEnterVBlank()
         } else if !nowVBlank && video.inVBlank {
             video.inVBlank = false
             video.didLeaveVBlank = true
             irq.onLeaveVBlank()
-            ppu?.onLeaveVBlank()
         }
     }
 
@@ -238,9 +236,7 @@ final class Bus {
     private func writeCPUReg(_ addr: u16, value: u8) {
         switch addr {
         case 0x4200:
-            irq.nmiEnable = (value & 0x80) != 0
-            irq.hvIrqEnable = (value & 0x30) != 0
-            irq.autoJoypadEnable = (value & 0x01) != 0
+            irq.setNMITIMEN(value, video: video)
         case 0x4207:
             irq.hTime = (irq.hTime & 0x100) | Int(value)
         case 0x4208:

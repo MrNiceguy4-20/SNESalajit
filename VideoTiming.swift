@@ -10,7 +10,7 @@ struct VideoTiming {
     static let totalScanlines = 262
     static let visibleScanlines = 224
 
-    static let vblankStartScanline = 225
+    static let vblankStartScanline = visibleScanlines
     
     var dot: Int = 0          // 0..340
     var scanline: Int = 0     // 0..261

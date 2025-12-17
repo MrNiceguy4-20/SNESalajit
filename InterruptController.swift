@@ -4,7 +4,8 @@ import Foundation
 final class InterruptController {
     // $4200 NMITIMEN bits
     var nmiEnable: Bool = false
-    var hvIrqEnable: Bool = false
+    var hIrqEnable: Bool = false
+    var vIrqEnable: Bool = false
     var autoJoypadEnable: Bool = false
 
     // $4207-420A
@@ -24,7 +25,8 @@ final class InterruptController {
 
     func reset() {
         nmiEnable = false
-        hvIrqEnable = false
+        hIrqEnable = false
+        vIrqEnable = false
         autoJoypadEnable = false
         hTime = 0
         vTime = 0
@@ -35,14 +37,7 @@ final class InterruptController {
         nmiLatchedThisVBlank = false
     }
 
-    func onEnterVBlank() {
-        // Latch NMI event at start of vblank if enabled.
-        if nmiEnable && !nmiLatchedThisVBlank {
-            rdnmi |= 0x80
-            nmiLine = true
-            nmiLatchedThisVBlank = true
-        }
-    }
+    func onEnterVBlank() { latchNMIIfNeeded() }
 
     func onLeaveVBlank() {
         // Drop line; clear per-vblank latch.
@@ -51,12 +46,40 @@ final class InterruptController {
     }
 
     func pollHVMatch(dot: Int, scanline: Int) {
-        // H/V IRQ compare: when scanline == vTime and dot == hTime, assert IRQ if enabled.
-        guard hvIrqEnable else { return }
-        if scanline == vTime && dot == hTime {
+        let match: Bool
+
+        if hIrqEnable && vIrqEnable {
+            match = (scanline == vTime) && (dot == hTime)
+        } else if vIrqEnable {
+            // V-IRQ triggers at dot 0 on the selected scanline.
+            match = (scanline == vTime) && dot == 0
+        } else if hIrqEnable {
+            // H-IRQ triggers when dot == hTime (any scanline).
+            match = (dot == hTime)
+        } else {
+            match = false
+        }
+
+        if match {
             timeup |= 0x80
             irqLine = true
         }
+    }
+
+    /// Write handler for $4200 NMITIMEN.
+    /// If NMI is enabled while already in VBlank, the NMI flag/line must assert immediately.
+    func setNMITIMEN(_ value: u8, video: VideoTiming) {
+        let newNMIEnable = (value & 0x80) != 0
+        if newNMIEnable && !nmiEnable && video.inVBlank {
+            rdnmi |= 0x80
+            nmiLine = true
+            nmiLatchedThisVBlank = true
+        }
+        nmiEnable = newNMIEnable
+
+        hIrqEnable = (value & 0x10) != 0
+        vIrqEnable = (value & 0x20) != 0
+        autoJoypadEnable = (value & 0x01) != 0
     }
 
     func clearIRQLine() {
@@ -79,5 +102,15 @@ final class InterruptController {
         timeup &= 0x7F
         irqLine = false
         return v
+    }
+
+    // MARK: - Private helpers
+
+    private func latchNMIIfNeeded() {
+        if nmiEnable && !nmiLatchedThisVBlank {
+            rdnmi |= 0x80
+            nmiLine = true
+            nmiLatchedThisVBlank = true
+        }
     }
 }
