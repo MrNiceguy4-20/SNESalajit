@@ -1,15 +1,12 @@
 import Foundation
 
+var globalLogHandler: ((String, String) -> Void)?
 enum Log {
-    static var enabled = true
-
     static func info(_ s: String) {
-        guard enabled else { return }
-        NSLog("[INFO] \(s)")
+        globalLogHandler?(s, "INFO")
     }
 
     static func warn(_ s: String) {
-        guard enabled else { return }
-        NSLog("[WARN] \(s)")
+        globalLogHandler?(s, "WARN")
     }
 }

@@ -7,19 +7,35 @@ enum ROMLoader {
     }
 
     static func load(url: URL) throws -> Cartridge {
-        guard let data = try? Data(contentsOf: url) else { throw ROMError.unreadable }
+        Log.info("Attempting to load ROM at path: \(url.path)")
+
+        guard let data = try? Data(contentsOf: url) else {
+            Log.warn("Failed to read ROM data from disk")
+            throw ROMError.unreadable
+        }
+
         var bytes = [u8](data)
+        Log.info("Read \(bytes.count) bytes from ROM file")
 
         // Strip 512-byte copier header if present (common in .smc)
         if bytes.count % 1024 == 512 {
             bytes.removeFirst(512)
+            Log.info("Detected and stripped 512-byte copier header; new size: \(bytes.count) bytes")
         }
-        guard bytes.count > 0x8000 else { throw ROMError.tooSmall }
+
+        guard bytes.count > 0x8000 else {
+            Log.warn("ROM is too small after header processing (\(bytes.count) bytes)")
+            throw ROMError.tooSmall
+        }
 
         // Detect mapping + SRAM size from internal header (best-effort).
-        let mapping = detectMapping(rom: bytes)
+        let (mapping, loScore, hiScore) = detectMapping(rom: bytes)
         let headerOffset = internalHeaderOffset(for: mapping)
+        Log.info("Mapping detection scores — LoROM: \(loScore), HiROM: \(hiScore); selected: \(mapping)")
+
         let sramSizeBytes = parseSRAMSize(rom: bytes, headerOffset: headerOffset)
+        Log.info(String(format: "Internal header offset: 0x%04X, SRAM size: %d bytes",
+                        headerOffset, sramSizeBytes))
 
         return Cartridge(rom: bytes, mapping: mapping, sramSizeBytes: sramSizeBytes)
     }
@@ -39,29 +55,30 @@ enum ROMLoader {
         let o = headerOffset + 0x18
         guard o < rom.count else { return 0 }
         let exp = rom[o]
-        // Value is log2(size in kbits) or 0 if none; common: 0x03 => 8kbits? In practice many docs treat it as size = 2^n kbits.
-        // We'll use: sizeBytes = (1 << exp) * 1024 / 8, but clamp to sane range.
+
         if exp == 0 { return 0 }
         if exp > 0x10 { return 0 }
+
         let kbits = 1 << Int(exp) // kbits
         let bytes = (kbits * 1024) / 8
         // Clamp: 0..512KB
         return min(max(bytes, 0), 512 * 1024)
     }
 
-    private static func detectMapping(rom: [u8]) -> Cartridge.Mapping {
+    private static func detectMapping(rom: [u8]) -> (Cartridge.Mapping, Int, Int) {
         // Prefer map mode byte at internal header + 0x15 (0x7FD5/0xFFD5)
         let lo = scoreHeader(rom: rom, headerOffset: 0x7FC0)
         let hi = scoreHeader(rom: rom, headerOffset: 0xFFC0)
 
-        return (lo >= hi) ? .loROM : .hiROM
+        let mapping: Cartridge.Mapping = (lo >= hi) ? .loROM : .hiROM
+        return (mapping, lo, hi)
     }
 
     private static func scoreHeader(rom: [u8], headerOffset: Int) -> Int {
         guard headerOffset + 0x20 < rom.count else { return 0 }
 
         // Title is 21 bytes at offset 0x00
-        let title = rom[headerOffset..<(headerOffset+21)]
+        let title = rom[headerOffset..<(headerOffset + 21)]
         let titleScore = title.reduce(0) { acc, b in
             let printable = (b >= 0x20 && b <= 0x7E)
             return acc + (printable ? 2 : -1)
