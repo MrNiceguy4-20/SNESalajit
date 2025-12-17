@@ -53,8 +53,7 @@ enum ROMLoader {
         if exp == 0 { return 0 }
         if exp > 0x10 { return 0 }
 
-        let kbits = 1 << Int(exp)
-        let bytes = (kbits * 1024) / 8
+        let bytes = 1024 << Int(exp)
         return min(max(bytes, 0), 512 * 1024)
     }
 
