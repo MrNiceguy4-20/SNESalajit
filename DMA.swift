@@ -1,0 +1,231 @@
+import Foundation
+
+/// General DMA engine (triggered by writes to $420B).
+///
+/// Phase 2 additions:
+/// - Returns an approximate master-cycle stall cost for CPU blocking during DMA.
+final class DMAEngine {
+    private(set) var channels: [DMAChannel] = Array(repeating: DMAChannel(), count: 8)
+
+    /// Very coarse timing model:
+    /// - Treat each transferred byte as consuming this many master cycles of CPU stall.
+    /// (Real SNES DMA timing is more nuanced; this is good enough for deterministic bring-up.)
+    private static let masterCyclesPerByte: Int = 8
+    private static let masterCyclesPerChannelOverhead: Int = 8
+
+    func reset() {
+        for i in 0..<8 { channels[i].reset() }
+    }
+
+    func readReg(channel: Int, reg: Int) -> u8 {
+        let ch = channels[channel]
+        switch reg {
+        case 0x0: return ch.dmap
+        case 0x1: return ch.bbad
+        case 0x2: return lo8(ch.a1t)
+        case 0x3: return hi8(ch.a1t)
+        case 0x4: return ch.a1b
+        case 0x5: return lo8(ch.das)
+        case 0x6: return hi8(ch.das)
+        case 0x7: return lo8(ch.a2a)
+        case 0x8: return hi8(ch.a2a)
+        case 0x9: return ch.a2b
+        case 0xA: return ch.ntr
+        default:  return 0xFF
+        }
+    }
+
+    func writeReg(channel: Int, reg: Int, value: u8) {
+        switch reg {
+        case 0x0: channels[channel].dmap = value
+        case 0x1: channels[channel].bbad = value
+        case 0x2: channels[channel].a1t = (channels[channel].a1t & 0xFF00) | u16(value)
+        case 0x3: channels[channel].a1t = (channels[channel].a1t & 0x00FF) | (u16(value) << 8)
+        case 0x4: channels[channel].a1b = value
+        case 0x5: channels[channel].das = (channels[channel].das & 0xFF00) | u16(value)
+        case 0x6: channels[channel].das = (channels[channel].das & 0x00FF) | (u16(value) << 8)
+        case 0x7: channels[channel].a2a = (channels[channel].a2a & 0xFF00) | u16(value)
+        case 0x8: channels[channel].a2a = (channels[channel].a2a & 0x00FF) | (u16(value) << 8)
+        case 0x9: channels[channel].a2b = value
+        case 0xA: channels[channel].ntr = value
+        default: break
+        }
+    }
+
+    /// Start DMA on all enabled channels in `mask`.
+    /// Returns an approximate master-cycle stall cost (CPU is blocked during DMA).
+    @discardableResult
+    func start(mask: u8, bus: Bus) -> Int {
+        var totalBytes = 0
+        var channelsRun = 0
+
+        // Each enabled bit triggers a DMA transfer immediately.
+        for ch in 0..<8 {
+            if (mask & (1 << ch)) == 0 { continue }
+            channelsRun += 1
+            totalBytes += runChannel(ch, bus: bus)
+        }
+
+        if channelsRun == 0 { return 0 }
+        return (totalBytes * DMAEngine.masterCyclesPerByte) + (channelsRun * DMAEngine.masterCyclesPerChannelOverhead)
+    }
+
+    /// Runs one DMA channel and returns the number of bytes transferred.
+    private func runChannel(_ idx: Int, bus: Bus) -> Int {
+        var ch = channels[idx]
+
+        let mode = ch.transferMode
+        let bAddr = u16(0x2100) | u16(ch.bbad) // Common PPU B-bus window.
+        let dirBtoA = ch.directionBtoA
+        let fixed = ch.fixed
+        let dec = ch.decrement
+
+        var a = ch.aBusAddress24
+        var remaining = Int(ch.das)
+        if remaining == 0 { remaining = 0x10000 } // hardware: 0 means 65536
+
+        var transferred = 0
+
+        while remaining > 0 {
+            // For each transfer mode, we may do 1-4 bytes per unit.
+            let offsets = DMAEngine.transferOffsets(for: mode)
+            for off in offsets {
+                if remaining == 0 { break }
+
+                let b = u16(UInt16(bAddr &+ u16(off)))
+                if dirBtoA {
+                    // B -> A
+                    let v = bus.read8_mmio(b)
+                    let bank = u8((a >> 16) & 0xFF)
+                    let addr = u16(a & 0xFFFF)
+                    bus.write8(bank: bank, addr: addr, value: v)
+                } else {
+                    // A -> B
+                    let bank = u8((a >> 16) & 0xFF)
+                    let addr = u16(a & 0xFFFF)
+                    let v = bus.read8(bank: bank, addr: addr)
+                    bus.write8_mmio(b, value: v)
+                }
+
+                transferred += 1
+
+                if !fixed {
+                    if dec { a = (a &- 1) & 0xFFFFFF } else { a = (a &+ 1) & 0xFFFFFF }
+                }
+                remaining -= 1
+            }
+        }
+
+        // Store back updated address/size (hardware updates A1T/A1B and sets DAS to 0).
+        ch.a1t = u16(a & 0xFFFF)
+        ch.a1b = u8((a >> 16) & 0xFF)
+        ch.das = 0
+        channels[idx] = ch
+
+        return transferred
+    }
+
+    
+    // MARK: - HDMA (Phase 2.2 skeleton)
+
+    /// Initialize HDMA runtime state for all enabled channels in `mask`.
+    /// Called at start of VBlank.
+    func hdmaInit(mask: u8, bus: Bus) {
+        _ = bus
+        for ch in 0..<8 {
+            if (mask & (1 << ch)) == 0 { continue }
+            var c = channels[ch]
+            c.hdmaTableAddr = c.a2a
+            c.hdmaBank = c.a2b
+            c.hdmaLineCounter = 0
+            c.hdmaDoTransfer = false
+            channels[ch] = c
+        }
+    }
+
+    /// Step HDMA once per visible scanline (very simplified).
+    /// This models the basic table format:
+    /// - A line descriptor byte is fetched when the line counter reaches 0.
+    /// - If descriptor == 0, channel terminates (no further transfers).
+    /// - Bits 0-6 = line count; bit7 = (approx) "no transfer" on first line when set.
+    /// - If transfer occurs, we read N bytes from the table stream and write to B-bus regs ($21xx).
+    func hdmaStep(mask: u8, bus: Bus) {
+        for ch in 0..<8 {
+            if (mask & (1 << ch)) == 0 { continue }
+            var c = channels[ch]
+
+            // If never initialized (or reset), seed runtime fields from regs.
+            if c.hdmaBank == 0 && c.hdmaTableAddr == 0 {
+                c.hdmaTableAddr = c.a2a
+                c.hdmaBank = c.a2b
+            }
+
+            // Terminated channel: do nothing.
+            if c.hdmaTableAddr == 0 && c.hdmaLineCounter == 0 {
+                channels[ch] = c
+                continue
+            }
+
+            if c.hdmaLineCounter == 0 {
+                // Fetch new line descriptor.
+                let desc = bus.read8(bank: c.hdmaBank, addr: c.hdmaTableAddr)
+                c.hdmaTableAddr &+= 1
+
+                if desc == 0 {
+                    // Terminate.
+                    c.hdmaTableAddr = 0
+                    c.hdmaLineCounter = 0
+                    c.hdmaDoTransfer = false
+                    channels[ch] = c
+                    continue
+                }
+
+                c.hdmaLineCounter = desc & 0x7F
+                // Approx: bit7 set means "no transfer on this line"; clear means transfer.
+                c.hdmaDoTransfer = (desc & 0x80) == 0
+            }
+
+            if c.hdmaDoTransfer && c.hdmaLineCounter > 0 {
+                let mode = c.transferMode
+                let bBase = u16(0x2100) | u16(c.bbad)
+                let offsets = DMAEngine.transferOffsets(for: mode)
+
+                for off in offsets {
+                    let data = bus.read8(bank: c.hdmaBank, addr: c.hdmaTableAddr)
+                    c.hdmaTableAddr &+= 1
+                    let b = u16(UInt16(bBase &+ u16(off)))
+                    bus.write8_mmio(b, value: data)
+                }
+            }
+
+            if c.hdmaLineCounter > 0 {
+                c.hdmaLineCounter &-= 1
+            }
+
+            channels[ch] = c
+        }
+    }
+
+private static func transferOffsets(for mode: Int) -> [Int] {
+        // Common SNES DMA transfer modes:
+        // 0: 1 byte (b)
+        // 1: 2 bytes (b, b+1)
+        // 2: 2 bytes (b, b)
+        // 3: 4 bytes (b, b, b+1, b+1)
+        // 4: 4 bytes (b, b+1, b+2, b+3)
+        // 5: 4 bytes (b, b, b, b)
+        // 6: 2 bytes (b, b+1) [rare]
+        // 7: 4 bytes (b, b+1, b, b+1) [rare]
+        switch mode & 7 {
+        case 0: return [0]
+        case 1: return [0, 1]
+        case 2: return [0, 0]
+        case 3: return [0, 0, 1, 1]
+        case 4: return [0, 1, 2, 3]
+        case 5: return [0, 0, 0, 0]
+        case 6: return [0, 1]
+        case 7: return [0, 1, 0, 1]
+        default: return [0]
+        }
+    }
+}
