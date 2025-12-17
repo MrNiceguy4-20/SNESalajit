@@ -46,6 +46,7 @@ final class EmulatorViewModel: ObservableObject {
 
     func toggleRun() {
         isRunning.toggle()
+        if !isRunning { emulator.saveSRAM() }
         log("Emulator \(isRunning ? "resumed" : "paused")")
     }
 

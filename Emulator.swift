@@ -12,6 +12,7 @@ final class Emulator {
     let apu = APU()
 
     private let clock = MasterClock()
+    private var romURL: URL?
 
     init() {
         cpu.attach(bus: bus)
@@ -34,14 +35,17 @@ final class Emulator {
     }
 
     func loadROM(url: URL) throws {
+        saveSRAM()
+
         let cart = try ROMLoader.load(url: url)
+        romURL = url
+        loadSRAMIfPresent(for: cart)
         bus.insertCartridge(cart)
         reset()
     }
 
     /// Step emulator by wall-clock time (seconds).
     func step(seconds: Double) {
-        // SNES master clock (NTSC) ~21.47727 MHz. (Phase 5 will support PAL/region.)
         let masterHz = 21_477_272.0
         let cyclesToRun = Int(masterHz * seconds)
         step(masterCycles: cyclesToRun)
@@ -50,12 +54,9 @@ final class Emulator {
     func step(masterCycles: Int) {
         var remaining = masterCycles
         while remaining > 0 {
-            // We advance in small chunks so bus timers/DMA can trigger deterministically.
-            // Chunk is 12 master cycles (~3 PPU dots).
             let chunk = min(remaining, 12)
             var slice = chunk
 
-            // 1) If DMA is stalling the CPU, consume stall first (CPU does not run).
             let stalled = bus.consumeDMAStall(masterCycles: slice)
             if stalled > 0 {
                 bus.step(masterCycles: stalled)
@@ -65,11 +66,9 @@ final class Emulator {
 
                 remaining -= stalled
                 slice -= stalled
-
                 if slice <= 0 { continue }
             }
 
-            // 2) Normal execution slice: run CPU + bus + PPU/APU.
             cpu.step(cycles: max(1, slice / 6))
             bus.step(masterCycles: slice)
             ppu.step(masterCycles: slice)
@@ -78,5 +77,31 @@ final class Emulator {
             remaining -= slice
             clock.advance(masterCycles: slice)
         }
+    }
+
+    func saveSRAM() {
+        guard let cart = bus.cartridge, cart.hasSRAM, let saveURL = saveFileURL else { return }
+        guard let bytes = cart.serializeSRAM() else { return }
+
+        do {
+            try Data(bytes).write(to: saveURL)
+            Log.info("Saved SRAM to \(saveURL.path)")
+        } catch {
+            Log.warn("Failed to save SRAM: \(error.localizedDescription)")
+        }
+    }
+
+    private func loadSRAMIfPresent(for cart: Cartridge) {
+        guard cart.hasSRAM, let saveURL = saveFileURL else { return }
+        guard let data = try? Data(contentsOf: saveURL) else { return }
+
+        let slice = data.prefix(cart.sramCapacity)
+        cart.loadSRAM([u8](slice))
+        Log.info(String(format: "Loaded %d bytes of SRAM from %@", slice.count, saveURL.lastPathComponent))
+    }
+
+    private var saveFileURL: URL? {
+        guard let romURL else { return nil }
+        return romURL.deletingPathExtension().appendingPathExtension("srm")
     }
 }
