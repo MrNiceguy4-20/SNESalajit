@@ -837,8 +837,10 @@ enum CPUInstructionTables {
             return branch(cpu: cpu, bus: bus, cond: cpu.flag(.overflow))
 
         default:
-            // Unknown/unimplemented opcode: treat as NOP for now.
-            // (Keeps emulator running while we expand the table.)
+#if DEBUG
+            print(String(format: "Missing opcode $%02X at %02X:%04X", Int(opcode), Int(cpu.r.pb), Int(cpu.r.pc)))
+#endif
+            
             return 2
         }
     }
