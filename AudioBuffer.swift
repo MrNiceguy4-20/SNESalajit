@@ -14,14 +14,11 @@ final class AudioBuffer {
         buffer.removeAll(keepingCapacity: true)
     }
 
-    /// Append `samples` *mono* samples of silence. If you're using interleaved stereo,
-    /// pass `samples = frames * 2`.
     func produceSilence(samples: Int) {
         guard samples > 0 else { return }
         buffer.append(contentsOf: repeatElement(0, count: samples))
     }
 
-    /// Interleaved stereo push (L,R).
     func push(left: Int, right: Int) {
         @inline(__always) func clamp16(_ v: Int) -> Int16 {
             if v > 32767 { return 32767 }

@@ -15,6 +15,8 @@ final class PPURegisters {
     private(set) var bg2ScreenSize: u8 = 0
     private(set) var bg3ScreenBase: u8 = 0
     private(set) var bg3ScreenSize: u8 = 0
+    private(set) var bg4ScreenBase: u8 = 0
+    private(set) var bg4ScreenSize: u8 = 0
 
     private(set) var bg1TileBase: u8 = 0
     private(set) var bg2TileBase: u8 = 0
@@ -70,24 +72,6 @@ final class PPURegisters {
     private var fixedColorG: Int = 0
     private var fixedColorB: Int = 0
 
-    // MARK: - OBJ / OAM
-    // $2101 OBJSEL
-    private(set) var objsel: u8 = 0
-
-    // $2102/$2103 OAMADDR
-    private(set) var oamAddr: u16 = 0
-    private var oamAddrHigh: Bool = false
-
-    // $2104 OAMDATA write latch
-    private var oamWriteLatch: u8? = nil
-
-    // $2138 OAMDATAREAD (simple)
-    private var oamReadLatchToggle: Bool = false
-
-    // MARK: - OBJ overflow flags ($213E STAT77 bits 7/6)
-    private(set) var objTimeOver: Bool = false
-    private(set) var objRangeOver: Bool = false
-
     // MARK: - VRAM
     private(set) var vmain: u8 = 0x80
     private(set) var vramAddr: u16 = 0
@@ -97,7 +81,6 @@ final class PPURegisters {
     private(set) var cgramAddr: u8 = 0
     private var cgramWriteLatch: u8? = nil
     private var cgramReadLatch: u16 = 0
-    private var cgramReadToggle: Bool = false
 
     // MARK: - H/V latch ($2137 latch, read via $213C/$213D)
     private var hvLatchH: u16 = 0
@@ -115,6 +98,7 @@ final class PPURegisters {
         bg1ScreenBase = 0; bg1ScreenSize = 0
         bg2ScreenBase = 0; bg2ScreenSize = 0
         bg3ScreenBase = 0; bg3ScreenSize = 0
+        bg4ScreenBase = 0; bg4ScreenSize = 0
 
         bg1TileBase = 0; bg2TileBase = 0; bg3TileBase = 0; bg4TileBase = 0
 
@@ -140,14 +124,6 @@ final class PPURegisters {
         coldata = 0
         fixedColorR = 0; fixedColorG = 0; fixedColorB = 0
 
-        objsel = 0
-        oamAddr = 0
-        oamAddrHigh = false
-        oamWriteLatch = nil
-        oamReadLatchToggle = false
-        objTimeOver = false
-        objRangeOver = false
-
         vmain = 0x80
         vramAddr = 0
         vramReadBuffer = 0
@@ -155,7 +131,6 @@ final class PPURegisters {
         cgramAddr = 0
         cgramWriteLatch = nil
         cgramReadLatch = 0
-        cgramReadToggle = false
 
         hvLatchH = 0
         hvLatchV = 0
@@ -163,25 +138,13 @@ final class PPURegisters {
         hvLatchToggleV = false
     }
 
-    func clearObjOverflowFlags() {
-        objTimeOver = false
-        objRangeOver = false
-    }
-
-    func setObjOverflow(range: Bool, time: Bool) {
-        if range { objRangeOver = true }
-        if time { objTimeOver = true }
-    }
-
     // MARK: - Read
 
     func read(addr: u16, mem: PPUMemory, openBus: u8, video: VideoTiming) -> u8 {
         switch addr {
-        case 0x2138:
-            // OAMDATAREAD: simplified sequential read of OAM with same addressing space as writes.
-            let v = mem.readOAM(Int(oamAddr) & 0x21F)
-            oamAddr = (oamAddr &+ 1) & 0x03FF
-            return v
+        case 0x2137:
+            // SLHV is write-only on real HW; reads typically return open bus.
+            return openBus
 
         case 0x2139:
             // VMDATAL (low)
@@ -191,23 +154,21 @@ final class PPURegisters {
             // VMDATAH (high)
             let v = u8(truncatingIfNeeded: vramReadBuffer >> 8)
             advanceVRAMAddress()
-            vramReadBuffer = mem.readVRAM16(wordAddress: vramAddr)
+            vramReadBuffer = mem.readVRAM16(wordAddress: mapVRAMWordAddress(vramAddr))
             return v
 
         case 0x213B:
-            // CGDATA: read low/high alternating
-            if !cgramReadToggle {
+            // CGDATA
+            if (openBus & 1) == 0 {
                 cgramReadLatch = mem.readCGRAM16(colorIndex: Int(cgramAddr))
-                cgramReadToggle = true
                 return u8(truncatingIfNeeded: cgramReadLatch)
             } else {
-                cgramReadToggle = false
+                let hi = u8(truncatingIfNeeded: cgramReadLatch >> 8)
                 cgramAddr &+= 1
-                return u8(truncatingIfNeeded: cgramReadLatch >> 8)
+                return hi
             }
 
         case 0x213C:
-            // OPHCT
             let out: u8 = !hvLatchToggleH
                 ? u8(truncatingIfNeeded: hvLatchH)
                 : u8(truncatingIfNeeded: hvLatchH >> 8)
@@ -215,28 +176,11 @@ final class PPURegisters {
             return out
 
         case 0x213D:
-            // OPVCT
             let out: u8 = !hvLatchToggleV
                 ? u8(truncatingIfNeeded: hvLatchV)
                 : u8(truncatingIfNeeded: hvLatchV >> 8)
             hvLatchToggleV.toggle()
             return out
-
-        case 0x213E:
-            // STAT77: OBJ time/range overflow in bits 7/6.
-            var v: u8 = 0
-            if objTimeOver { v |= 0x80 }
-            if objRangeOver { v |= 0x40 }
-            // version bits (low 4) left as 0
-            return v
-
-        case 0x213F:
-            // STAT78: minimal implementation (version bits only)
-            return 0x01
-
-        case 0x2137:
-            // SLHV read = open bus
-            return openBus
 
         default:
             return openBus
@@ -251,29 +195,6 @@ final class PPURegisters {
             forcedBlank = (value & 0x80) != 0
             brightness = value & 0x0F
 
-        case 0x2101:
-            objsel = value
-
-        case 0x2102:
-            oamAddr = (oamAddr & 0xFF00) | u16(value)
-            oamAddrHigh = false
-            oamWriteLatch = nil
-        case 0x2103:
-            oamAddr = (oamAddr & 0x00FF) | (u16(value & 0x01) << 8)
-            oamAddrHigh = (value & 0x80) != 0
-            oamWriteLatch = nil
-
-        case 0x2104:
-            // Write alternates low/high into OAM, but SNES has internal latches; simplified.
-            if let lo = oamWriteLatch {
-                mem.writeOAM(Int(oamAddr) & 0x21F, value: lo)
-                mem.writeOAM((Int(oamAddr) & 0x21F) ^ 1, value: value)
-                oamAddr = (oamAddr &+ 2) & 0x03FF
-                oamWriteLatch = nil
-            } else {
-                oamWriteLatch = value
-            }
-
         case 0x2105:
             bgMode = value & 0x07
             bg3Priority = (value & 0x08) != 0
@@ -287,6 +208,9 @@ final class PPURegisters {
         case 0x2109:
             bg3ScreenBase = (value >> 2) & 0x3F
             bg3ScreenSize = value & 0x03
+        case 0x210A:
+            bg4ScreenBase = (value >> 2) & 0x3F
+            bg4ScreenSize = value & 0x03
 
         case 0x210B:
             bg1TileBase = value & 0x0F
@@ -296,12 +220,12 @@ final class PPURegisters {
             bg3TileBase = value & 0x0F
             bg4TileBase = (value >> 4) & 0x0F
 
-        // BG scroll regs
         case 0x210D:
             let lo = value
             let hi = bg1hofsLatch
             bg1hofs = (u16(hi) << 8) | u16(lo)
             bg1hofsLatch = value
+
         case 0x210E:
             let lo = value
             let hi = bg1vofsLatch
@@ -313,6 +237,7 @@ final class PPURegisters {
             let hi = bg2hofsLatch
             bg2hofs = (u16(hi) << 8) | u16(lo)
             bg2hofsLatch = value
+
         case 0x2110:
             let lo = value
             let hi = bg2vofsLatch
@@ -324,6 +249,7 @@ final class PPURegisters {
             let hi = bg3hofsLatch
             bg3hofs = (u16(hi) << 8) | u16(lo)
             bg3hofsLatch = value
+
         case 0x2112:
             let lo = value
             let hi = bg3vofsLatch
@@ -335,6 +261,7 @@ final class PPURegisters {
             let hi = bg4hofsLatch
             bg4hofs = (u16(hi) << 8) | u16(lo)
             bg4hofsLatch = value
+
         case 0x2114:
             let lo = value
             let hi = bg4vofsLatch
@@ -346,24 +273,23 @@ final class PPURegisters {
 
         case 0x2116:
             vramAddr = (vramAddr & 0xFF00) | u16(value)
-            vramReadBuffer = mem.readVRAM16(wordAddress: vramAddr)
+            vramReadBuffer = mem.readVRAM16(wordAddress: mapVRAMWordAddress(vramAddr))
 
         case 0x2117:
             vramAddr = (vramAddr & 0x00FF) | (u16(value) << 8)
-            vramReadBuffer = mem.readVRAM16(wordAddress: vramAddr)
+            vramReadBuffer = mem.readVRAM16(wordAddress: mapVRAMWordAddress(vramAddr))
 
         case 0x2118:
-            mem.writeVRAMLow(wordAddress: vramAddr, value: value)
+            mem.writeVRAMLow(wordAddress: mapVRAMWordAddress(vramAddr), value: value)
             if (vmain & 0x80) == 0 { advanceVRAMAddress() }
 
         case 0x2119:
-            mem.writeVRAMHigh(wordAddress: vramAddr, value: value)
+            mem.writeVRAMHigh(wordAddress: mapVRAMWordAddress(vramAddr), value: value)
             if (vmain & 0x80) != 0 { advanceVRAMAddress() }
 
         case 0x2121:
             cgramAddr = value
             cgramWriteLatch = nil
-            cgramReadToggle = false
 
         case 0x2122:
             if let lo = cgramWriteLatch {
@@ -375,11 +301,9 @@ final class PPURegisters {
                 cgramWriteLatch = value
             }
 
-        // Screen enable
         case 0x212C: tmMain = value
         case 0x212D: tsSub = value
 
-        // Window selection / positions / logic
         case 0x2123: w12sel = value
         case 0x2124: w34sel = value
         case 0x2125: wobjsel = value
@@ -390,7 +314,6 @@ final class PPURegisters {
         case 0x212A: wbglog = value
         case 0x212B: wobjlog = value
 
-        // Color math
         case 0x2130: cgwsel = value
         case 0x2131: cgadsub = value
         case 0x2132:
@@ -398,7 +321,6 @@ final class PPURegisters {
             applyFixedColorComponent(value)
 
         case 0x2137:
-            // SLHV: latch H/V counters
             hvLatchH = u16(video.dot)
             hvLatchV = u16(video.scanline)
             hvLatchToggleH = false
@@ -427,7 +349,18 @@ final class PPURegisters {
         }
     }
 
-    // Returns true if pixel is allowed (not masked out) for the layer.
+    @inline(__always)
+    func subEnabled(_ layer: Layer) -> Bool {
+        switch layer {
+        case .bg1: return (tsSub & 0x01) != 0
+        case .bg2: return (tsSub & 0x02) != 0
+        case .bg3: return (tsSub & 0x04) != 0
+        case .bg4: return (tsSub & 0x08) != 0
+        case .obj: return (tsSub & 0x10) != 0
+        case .color: return true
+        }
+    }
+
     func windowAllows(_ layer: Layer, x: Int) -> Bool {
         let sel = windowSel(for: layer)
         let w1en = (sel & 0x02) != 0
@@ -449,11 +382,9 @@ final class PPURegisters {
         default: inside = !(in1 != in2)
         }
 
-        // treat "inside window" as masked region
         return !inside
     }
 
-    // Color math controls
     var colorMathSub: Bool { (cgadsub & 0x80) != 0 }
     var colorMathHalf: Bool { (cgadsub & 0x40) != 0 }
 
@@ -470,13 +401,39 @@ final class PPURegisters {
 
     func fixedColor() -> (r: Int, g: Int, b: Int) { (fixedColorR, fixedColorG, fixedColorB) }
 
-    // OBJ helpers
-    var objSizeSel: Int { Int(objsel & 0x07) }
-    var objNameBase: Int { Int((objsel >> 3) & 0x07) } // used as coarse tile data base selection
-
     // MARK: - Private
 
-    private func advanceVRAMAddress() { vramAddr &+= 1 }
+    private func advanceVRAMAddress() {
+        // VMAIN ($2115) bits 0-1 select increment size in *words*.
+        // 00: +1, 01: +32, 10: +128, 11: +128.
+        let inc: u16
+        switch vmain & 0x03 {
+        case 0x00: inc = 1
+        case 0x01: inc = 32
+        default:   inc = 128
+        }
+        vramAddr &+= inc
+    }
+
+    /// VRAM address remapping selected by VMAIN ($2115) bits 2-3.
+    /// The SNES PPU applies this remap to the internal *word* address.
+    @inline(__always)
+    private func mapVRAMWordAddress(_ addr: u16) -> u16 {
+        switch (vmain >> 2) & 0x03 {
+        case 0x00:
+            return addr
+        case 0x01:
+            // 8x8 tiles (32-byte rows): swap A4-A7 with A8-A11 in groups.
+            // Common for planar tile uploads.
+            return (addr & 0xFF00) | ((addr & 0x00E0) << 3) | (addr & 0x001F)
+        case 0x02:
+            // 16-byte rows
+            return (addr & 0xFE00) | ((addr & 0x01C0) << 3) | (addr & 0x003F)
+        default:
+            // 8-byte rows
+            return (addr & 0xFC00) | ((addr & 0x0380) << 3) | (addr & 0x007F)
+        }
+    }
 
     private func applyFixedColorComponent(_ v: u8) {
         let intensity = Int(v & 0x1F)
@@ -519,12 +476,13 @@ final class PPURegisters {
     }
 
     // MARK: - Derived bases for renderer
-
     var bg1TileDataBase: Int { Int(bg1TileBase) * 0x1000 }
     var bg2TileDataBase: Int { Int(bg2TileBase) * 0x1000 }
     var bg3TileDataBase: Int { Int(bg3TileBase) * 0x1000 }
+    var bg4TileDataBase: Int { Int(bg4TileBase) * 0x1000 }
 
     var bg1TilemapBase: Int { Int(bg1ScreenBase) * 0x400 }
     var bg2TilemapBase: Int { Int(bg2ScreenBase) * 0x400 }
     var bg3TilemapBase: Int { Int(bg3ScreenBase) * 0x400 }
+    var bg4TilemapBase: Int { Int(bg4ScreenBase) * 0x400 }
 }

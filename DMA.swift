@@ -5,6 +5,52 @@ import Foundation
 /// Phase 2 additions:
 /// - Returns an approximate master-cycle stall cost for CPU blocking during DMA.
 final class DMAEngine {
+
+    // MARK: - Debug
+
+    struct DMAChannelDebugState {
+        let index: Int
+        let dmap: u8
+        let bbad: u8
+        let a1t: u16
+        let a1b: u8
+        let das: u16
+        let a2a: u16
+        let a2b: u8
+        let ntr: u8
+
+        // HDMA runtime (Phase 2 skeleton)
+        let hdmaTableAddr: u16
+        let hdmaBank: u8
+        let hdmaLineCounter: u8
+        let hdmaDoTransfer: Bool
+    }
+
+    struct DMADebugState {
+        let channels: [DMAChannelDebugState]
+    }
+
+    func debugSnapshot() -> DMADebugState {
+        let chs = channels.enumerated().map { (i, c) in
+            DMAChannelDebugState(
+                index: i,
+                dmap: c.dmap,
+                bbad: c.bbad,
+                a1t: c.a1t,
+                a1b: c.a1b,
+                das: c.das,
+                a2a: c.a2a,
+                a2b: c.a2b,
+                ntr: c.ntr,
+                hdmaTableAddr: c.hdmaTableAddr,
+                hdmaBank: c.hdmaBank,
+                hdmaLineCounter: c.hdmaLineCounter,
+                hdmaDoTransfer: c.hdmaDoTransfer
+            )
+        }
+        return DMADebugState(channels: chs)
+    }
+
     private(set) var channels: [DMAChannel] = Array(repeating: DMAChannel(), count: 8)
 
     /// Very coarse timing model:

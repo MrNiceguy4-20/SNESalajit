@@ -10,6 +10,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var texture: MTLTexture?
 
     private var latestFramebuffer: Framebuffer?
+    private var frameUploadCounter: Int = 0
+    private var lastUploadLogTime: CFTimeInterval = 0
+    private var missingTextureWarningEmitted = false
 
     init?(view: MTKView) {
         guard let device = view.device,
@@ -48,14 +51,19 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         latestFramebuffer = framebuffer
         ensureTexture(width: framebuffer.width, height: framebuffer.height)
         upload(framebuffer: framebuffer)
+        frameUploadCounter += 1
+        logUploadIfNeeded()
+        missingTextureWarningEmitted = false
     }
 
     private func ensureTexture(width: Int, height: Int) {
         if let tex = texture, tex.width == width, tex.height == height { return }
-        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm,
-                                                         width: width,
-                                                         height: height,
-                                                         mipmapped: false)
+        let td = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
         td.usage = [.shaderRead]
         texture = device.makeTexture(descriptor: td)
     }
@@ -65,10 +73,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         var fb = framebuffer
         fb.pixels.withUnsafeMutableBytes { raw in
             let region = MTLRegionMake2D(0, 0, fb.width, fb.height)
-            tex.replace(region: region,
-                        mipmapLevel: 0,
-                        withBytes: raw.baseAddress!,
-                        bytesPerRow: fb.width * 4)
+            tex.replace(
+                region: region,
+                mipmapLevel: 0,
+                withBytes: raw.baseAddress!,
+                bytesPerRow: fb.width * 4
+            )
         }
     }
 
@@ -83,8 +93,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
               let enc = cmd.makeRenderCommandEncoder(descriptor: pass)
         else { return }
 
+        guard let tex = texture else {
+            if !missingTextureWarningEmitted {
+                Log.warn("Metal draw skipped: no texture available for current frame", component: .ppu)
+                missingTextureWarningEmitted = true
+            }
+            return
+        }
+
         enc.setRenderPipelineState(pipeline)
-        enc.setFragmentTexture(texture, index: 0)
+        enc.setFragmentTexture(tex, index: 0)
         enc.setFragmentSamplerState(sampler, index: 0)
 
         // Fullscreen triangle (no vertex buffer).
@@ -93,5 +111,21 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         enc.endEncoding()
         cmd.present(drawable)
         cmd.commit()
+    }
+
+    private func logUploadIfNeeded() {
+        let now = CFAbsoluteTimeGetCurrent()
+        if lastUploadLogTime == 0 {
+            lastUploadLogTime = now
+            return
+        }
+
+        let elapsed = now - lastUploadLogTime
+        guard elapsed >= 1.0 else { return }
+
+        let s = String(format: "%.2f", elapsed)
+        Log.debug("Metal renderer uploaded \(frameUploadCounter) frame(s) in \(s)s", component: .ppu)
+        frameUploadCounter = 0
+        lastUploadLogTime = now
     }
 }

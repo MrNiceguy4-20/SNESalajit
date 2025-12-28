@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// Top-level orchestrator. Single-core deterministic stepping.
 ///
@@ -10,7 +11,7 @@ final class Emulator {
     let cpu = CPU65816()
     let ppu = PPU()
     let apu = APU()
-
+    @Published var framebuffer: Framebuffer?
     private let clock = MasterClock()
     private var romURL: URL?
 
@@ -21,6 +22,7 @@ final class Emulator {
 
         bus.cpu = cpu
         bus.ppu = ppu
+        bus.ppuOwner = self
         bus.apu = apu
 
         reset()
@@ -44,19 +46,25 @@ final class Emulator {
         reset()
     }
 
-    /// Step emulator by wall-clock time (seconds).
     func step(seconds: Double) {
         let masterHz = 21_477_272.0
         let cyclesToRun = Int(masterHz * seconds)
         step(masterCycles: cyclesToRun)
     }
 
+
     func step(masterCycles: Int) {
         var remaining = masterCycles
+
+        // Phase 12: preserve CPU/master ratio exactly (master ~= cpu * 6).
+        // This eliminates long-term drift from integer truncation.
+        var cpuMasterAcc: Int = 0  // remainder in master cycles (0..5)
+
         while remaining > 0 {
             let chunk = min(remaining, 12)
             var slice = chunk
 
+            // 1) MDMA stall consumes master cycles where CPU does not execute.
             let stalled = bus.consumeDMAStall(masterCycles: slice)
             if stalled > 0 {
                 bus.step(masterCycles: stalled)
@@ -67,15 +75,34 @@ final class Emulator {
                 remaining -= stalled
                 slice -= stalled
                 if slice <= 0 { continue }
+
+                // IMPORTANT: do NOT add stalled cycles into cpuMasterAcc.
             }
 
-            cpu.step(cycles: max(1, slice / 6))
+            // 2) Convert master->CPU cycles with remainder carry (no drift).
+            cpuMasterAcc += slice
+            let cpuCycles = cpuMasterAcc / 6
+            cpuMasterAcc = cpuMasterAcc % 6
+
+            if cpuCycles > 0 {
+                if !(cpu.isWaiting && !cpu.nmiPending && !cpu.irqLine) {
+                    cpu.step(cycles: cpuCycles)
+                }
+            }
+
+            // 3) Advance the rest of the system in master cycles.
             bus.step(masterCycles: slice)
             ppu.step(masterCycles: slice)
             apu.step(masterCycles: slice)
 
             remaining -= slice
             clock.advance(masterCycles: slice)
+        }
+    }
+
+    func submitFrame(_ fb: Framebuffer) {
+        DispatchQueue.main.async {
+            self.framebuffer = fb
         }
     }
 

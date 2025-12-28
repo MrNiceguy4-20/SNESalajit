@@ -77,19 +77,30 @@ enum CPUAddressing {
     static func dpIndirectLong(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
         _ = bus
         let off = u16(cpu.fetch8())
-        let ptr = cpu.r.dp &+ off
-        let addr = cpu.read16(0x00, ptr)
-        let bank = cpu.read8(0x00, ptr &+ 2)
+        let ptr0 = cpu.r.dp &+ off
+        
+        // IMPORTANT: The pointer bytes wrap within the 256-byte direct page window.
+        // i.e. (ptr0+1) and (ptr0+2) keep the same high byte as ptr0.
+        let ptr1 = (ptr0 & 0xFF00) | u16(u8(truncatingIfNeeded: ptr0 &+ 1))
+        let ptr2 = (ptr0 & 0xFF00) | u16(u8(truncatingIfNeeded: ptr0 &+ 2))
+        
+        let lo = cpu.read8(0x00, ptr0)
+        let hi = cpu.read8(0x00, ptr1)
+        let bank = cpu.read8(0x00, ptr2)
+        
+        let addr = u16(lo) | (u16(hi) << 8)
         return (addr, bank)
     }
+        @inline(__always)
+        static func dpIndirectLongY(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
+            _ = bus
+            let base = dpIndirectLong(cpu: cpu, bus: bus)
+            let y = cpu.xIs8() ? u16(u8(truncatingIfNeeded: cpu.r.y)) : cpu.r.y
+            // 65C816: add Y to 16-bit address only; carry does not affect bank.
+            return (base.addr &+ y, base.bank)
+        }
+        
 
-    /// [dp],Y indirect long. Pointer is 24-bit, then indexed by Y.
-    @inline(__always)
-    static func dpIndirectLongY(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
-        let base = dpIndirectLong(cpu: cpu, bus: bus)
-        let y = cpu.xIs8() ? u16(u8(truncatingIfNeeded: cpu.r.y)) : cpu.r.y
-        return (base.addr &+ y, base.bank)
-    }
 
     // MARK: - Absolute
 
@@ -155,4 +166,16 @@ enum CPUAddressing {
         _ = bus
         return Int16(bitPattern: cpu.fetch16())
     }
+
+
+// MARK: - Stack relative
+
+/// Stack-relative addressing (sr). Effective address is S + immediate8 (bank $00).
+@inline(__always)
+static func stackRelative(cpu: CPU65816, bus: Bus) -> u16 {
+    _ = bus
+    let off = u16(cpu.fetch8())
+    return cpu.r.sp &+ off
+}
+
 }

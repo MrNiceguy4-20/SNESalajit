@@ -110,4 +110,11 @@ final class JoypadIO {
         }
         return bit
     }
+
+    /// Returns the current latched 16-bit words for both ports (LSB-first button order).
+    /// This does not advance the shift registers.
+    func latchedWords() -> (u16, u16) {
+        (shift1, shift2)
+    }
+
 }

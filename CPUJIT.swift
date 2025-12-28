@@ -1,60 +1,47 @@
 import Foundation
 
+/// CPU JIT router.
+///
+/// Phase 13: unify interrupt-boundary semantics between interpreter and JIT.
+/// For now, the 65C816 "JIT" layer is a thin wrapper that delegates to the same
+/// interpreter stepping logic, so IRQ/NMI delivery and cycle-debt behavior stay
+/// identical regardless of `cpu.useJIT`.
 final class CPUJIT {
     private let execMem = JITExecutableMemory()
     private let assembler = X64Assembler()
+
     private var enabled: Bool = false
-    private var cycleDebt: Int = 0
-    private var nmiLatched: Bool = false
+
+    /// Shared stepping logic (also used by the non-JIT path).
+    private let shim = CPUInterpreter()
 
     func reset() {
         enabled = false
         execMem.reset()
-        cycleDebt = 0
-        nmiLatched = false
+        shim.reset()
     }
 
     func setEnabled(_ flag: Bool) {
         if enabled == flag { return }
         enabled = flag
+
         if !flag {
             // Flush any partial JIT state so re-enabling starts clean.
-            cycleDebt = 0
-            nmiLatched = false
             execMem.reset()
+            shim.reset()
         }
     }
 
     func step(cpu: CPU65816, bus: Bus, cycles: Int) {
+
+// If the CPU is in WAI, it must not execute any instructions until an IRQ/NMI is pending.
+if cpu.isWaiting && !cpu.nmiPending && !cpu.irqLine {
+    return
+}
         guard enabled else { return }
-        cycleDebt += cycles
 
-        // Phase 1/2 shim: execute using the same path as the interpreter but keep the JIT
-        // wrapper active so we can layer hot block compilation later.
-        while cycleDebt > 0 {
-
-            // NMI: service on rising edge of nmiLine.
-            if cpu.nmiLine {
-                if !nmiLatched {
-                    nmiLatched = true
-                    cpu.serviceInterrupt(.nmi)
-                    cycleDebt -= 7
-                    continue
-                }
-            } else {
-                nmiLatched = false
-            }
-
-            // IRQ: level-sensitive and gated by I flag.
-            if cpu.irqLine && !cpu.flag(.irqDis) {
-                cpu.serviceInterrupt(.irq)
-                cycleDebt -= 7
-                continue
-            }
-
-            let opcode = cpu.fetchOpcode()
-            let cost = CPUInstructionTables.execute(opcode: opcode, cpu: cpu, bus: bus)
-            cycleDebt -= max(1, cost)
-        }
+        // Phase 13: keep semantics identical to interpreter (IRQ/NMI between instructions,
+        // deterministic cycle debt, and NMI edge latch).
+        shim.step(cpu: cpu, bus: bus, cycles: cycles)
     }
 }

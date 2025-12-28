@@ -60,11 +60,9 @@ final class SPC700 {
         let ya = Int(getYA())
         let div = Int(x)
 
-        // Half-carry "odd dirt effect"
         setFlag(SPC700.H, (Int(x) & 0x0F) <= (Int(y) & 0x0F))
 
         if div == 0 {
-            // Undefined on hardware; choose a stable behavior.
             a = 0xFF
             y = u8((ya >> 8) & 0xFF)
             setFlag(SPC700.V, true)
@@ -106,7 +104,7 @@ final class SPC700 {
 
         if !c || v > 0x99 {
             v -= 0x60
-            setFlag(SPC700.C, false) // borrow occurred
+            setFlag(SPC700.C, false)
         } else {
             setFlag(SPC700.C, true)
         }
@@ -126,13 +124,11 @@ final class SPC700 {
         return lo | (hi << 8)
     }
 
-    // Stack ($0100)
     @inline(__always) func push8(_ apu: APU, _ v: u8) { apu.write8(0x0100 | u16(sp), v); sp &-= 1 }
     @inline(__always) func pop8(_ apu: APU) -> u8 { sp &+= 1; return apu.read8(0x0100 | u16(sp)) }
     @inline(__always) func push16(_ apu: APU, _ v: u16) { push8(apu, u8((v >> 8) & 0xFF)); push8(apu, u8(v & 0xFF)) }
     @inline(__always) func pop16(_ apu: APU) -> u16 { let lo = u16(pop8(apu)); let hi = u16(pop8(apu)); return lo | (hi << 8) }
 
-    // ALU helpers
     @inline(__always)
     func adc(_ v: u8) {
         let c = flag(SPC700.C) ? 1 : 0
@@ -154,13 +150,11 @@ final class SPC700 {
         updateNZ(u8(diff & 0xFF))
     }
 
-    // Shifts/rotates (update C/N/Z)
     @inline(__always) func asl(_ v: u8) -> u8 { setFlag(SPC700.C, (v & 0x80) != 0); let r = v << 1; updateNZ(r); return r }
     @inline(__always) func lsr(_ v: u8) -> u8 { setFlag(SPC700.C, (v & 1) != 0); let r = v >> 1; updateNZ(r); return r }
     @inline(__always) func rol(_ v: u8) -> u8 { let cIn: u8 = flag(SPC700.C) ? 1 : 0; setFlag(SPC700.C, (v & 0x80) != 0); let r = (v << 1) | cIn; updateNZ(r); return r }
     @inline(__always) func ror(_ v: u8) -> u8 { let cIn: u8 = flag(SPC700.C) ? 0x80 : 0; setFlag(SPC700.C, (v & 1) != 0); let r = (v >> 1) | cIn; updateNZ(r); return r }
 
-    // YA helpers
     @inline(__always) func getYA() -> u16 { (u16(y) << 8) | u16(a) }
     @inline(__always) func setYA(_ v: u16) { a = u8(v & 0xFF); y = u8((v >> 8) & 0xFF); updateNZ(y) }
 }
