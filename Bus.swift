@@ -195,11 +195,38 @@ final class Bus {
     }
 
 
-    private func readVector16(_ cart: Cartridge, mapping: Cartridge.Mapping, addr: u16) -> u16? {
-        guard let lo = readCartridgeByte(cart, mapping: mapping, bank: 0x00, addr: addr),
-              let hi = readCartridgeByte(cart, mapping: mapping, bank: 0x00, addr: addr &+ 1) else { return nil }
-        return u16(lo) | (u16(hi) << 8)
+    func readVector16(_ cart: Cartridge, mapping: Cartridge.Mapping, addr: u16) -> u16? {
+        func readVec(_ m: Cartridge.Mapping) -> u16? {
+            guard let lo = readCartridgeByte(cart, mapping: m, bank: 0x00, addr: addr) else { return nil }
+            guard let hi = readCartridgeByte(cart, mapping: m, bank: 0x00, addr: addr &+ 1) else { return nil }
+            return u16(lo) | (u16(hi) << 8)
+        }
+
+        func vectorTargetLooksValid(_ m: Cartridge.Mapping, _ v: u16) -> Bool {
+            if v < 0x8000 { return false }
+            guard let op = readCartridgeByte(cart, mapping: m, bank: 0x00, addr: v) else { return false }
+            if op == 0xFF { return false }
+            switch op {
+            case 0x00, 0x02, 0x40, 0x60, 0x6B, 0xDB, 0x82, 0x42: return false
+            default: return true
+            }
+        }
+
+        guard let v0 = readVec(mapping) else { return nil }
+
+        // Runtime safeguard: if a vector points at an invalid entrypoint, try the other mapping.
+        if addr == 0xFFFE || addr == 0xFFFA || addr == 0xFFFC {
+            if v0 == 0x0000 || v0 == 0xFFFF || !vectorTargetLooksValid(mapping, v0) {
+                let alt: Cartridge.Mapping = (mapping == .loROM) ? .hiROM : .loROM
+                if let v1 = readVec(alt), v1 != 0x0000, v1 != 0xFFFF, vectorTargetLooksValid(alt, v1) {
+                    return v1
+                }
+            }
+        }
+
+        return v0
     }
+
 
     func consumeDMAStall(masterCycles maxMasterCycles: Int) -> Int {
         if dmaStallMasterCycles <= 0 { return 0 }
@@ -228,7 +255,9 @@ final class Bus {
             if hdmaen != 0, video.isVisibleScanline { dma.hdmaStep(mask: hdmaen, bus: self) }
         }
         if video.consumeDidEnterVBlank() {
-            irq.onEnterVBlank(dot: video.dot, scanline: video.scanline)
+            if irq.nmiEnable {
+                irq.onEnterVBlank(dot: video.dot, scanline: video.scanline)
+            }
             if hdmaen != 0 { dma.hdmaInit(mask: hdmaen, bus: self) }
             if irq.autoJoypadEnable { autoJoypadStartDelayDots = 75 }
             ppu?.onEnterVBlank()

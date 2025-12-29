@@ -308,7 +308,8 @@ final class CPU65816 {
         let isBrkLike = (kind == .brk || kind == .cop)
 
         if isBrkLike {
-            _ = fetch8()
+            // BRK/COP are two-byte instructions; skip the signature byte so RTI returns to the next instruction.
+            r.pc &+= 1
         }
 
         if !r.emulationMode {
