@@ -1,6 +1,11 @@
 import Foundation
 
 final class Bus {
+    @inline(__always) func isIOBank(_ bank: u8) -> Bool {
+        return bank == 0x00 || bank == 0x80
+    }
+
+
     weak var cpu: CPU65816?
     weak var ppu: PPU?
     weak var ppuOwner: Emulator?
@@ -133,7 +138,7 @@ final class Bus {
             guard let op = readCartridgeByte(cart, mapping: mapping, bank: 0x00, addr: v & 0xFFFF) else { return false }
             if op == 0xFF { return false }
             switch op {
-            case 0x00, 0x02, 0xDB, 0x82, 0x42: return false
+            case 0x00, 0x02, 0x40, 0x60, 0x6B, 0xDB, 0x82, 0x42: return false
             default: return true
             }
         }
@@ -145,13 +150,12 @@ final class Bus {
         }
     }
 
-        private func romOffsetForMapping(_ mapping: Cartridge.Mapping, bank: u8, addr: u16) -> Int? {
+    private func romOffsetForMapping(_ mapping: Cartridge.Mapping, bank: u8, addr: u16) -> Int? {
         let b = Int(bank)
         if b == 0x7E || b == 0x7F { return nil }
 
         switch mapping {
         case .loROM:
-            // LoROM ROM mapping:
             // 00-3F,80-BF: 8000-FFFF -> ROM
             // 40-7D,C0-FF: 0000-7FFF -> ROM (mirror)
             if (b <= 0x3F) || (b >= 0x80 && b <= 0xBF) {
@@ -165,7 +169,6 @@ final class Bus {
             return nil
 
         case .hiROM:
-            // HiROM ROM mapping:
             // 00-3F,80-BF: 8000-FFFF -> ROM
             // 40-7D,C0-FF: 0000-FFFF -> ROM
             if (b <= 0x3F) || (b >= 0x80 && b <= 0xBF) {
@@ -182,16 +185,15 @@ final class Bus {
         }
     }
 
-        private func readCartridgeByte(_ cart: Cartridge, mapping: Cartridge.Mapping, bank: u8, addr: u16) -> u8? {
+    private func readCartridgeByte(_ cart: Cartridge, mapping: Cartridge.Mapping, bank: u8, addr: u16) -> u8? {
         guard let off0 = romOffsetForMapping(mapping, bank: bank, addr: addr) else { return nil }
         let count = cart.rom.count
         guard count > 0 else { return nil }
-
-        // Mirror/wrap within ROM size for out-of-range accesses (common with smaller ROMs).
         let off = off0 >= 0 ? (off0 % count) : nil
         guard let o = off else { return nil }
         return cart.rom[o]
     }
+
 
     private func readVector16(_ cart: Cartridge, mapping: Cartridge.Mapping, addr: u16) -> u16? {
         guard let lo = readCartridgeByte(cart, mapping: mapping, bank: 0x00, addr: addr),
@@ -229,11 +231,11 @@ final class Bus {
             irq.onEnterVBlank(dot: video.dot, scanline: video.scanline)
             if hdmaen != 0 { dma.hdmaInit(mask: hdmaen, bus: self) }
             if irq.autoJoypadEnable { autoJoypadStartDelayDots = 75 }
-            ppu?.reset()
+            ppu?.onEnterVBlank()
         }
         if video.consumeDidLeaveVBlank() {
             irq.onLeaveVBlank(dot: video.dot, scanline: video.scanline)
-            ppu?.reset()
+            ppu?.onLeaveVBlank()
         }
         if autoJoypadStartDelayDots > 0 {
             autoJoypadStartDelayDots -= 1
@@ -242,23 +244,41 @@ final class Bus {
     }
 
     func read8_physical(bank: u8, addr: u16) -> u8 {
+        // Physical reads are used for things like debug/trace and vector plausibility checks.
+        // They should reflect the same mapping rules as normal CPU reads, including open-bus behavior.
+
         if bank == 0x7E || bank == 0x7F {
-            return wram.read8(offset: (Int(bank - 0x7E) << 16) | Int(addr))
+            let v = wram.read8(offset: (Int(bank - 0x7E) << 16) | Int(addr))
+            openBus = v
+            return v
         }
+
         if isIOBank(bank), addr < 0x2000 {
-            let v = wram.read8(offset: Int(addr)); openBus = v; return v
+            let v = wram.read8(offset: Int(addr))
+            openBus = v
+            return v
         }
+
         if isIOBank(bank), (MMIO.isMMIO(addr) || addr == 0x4016 || addr == 0x4017) {
-            let v = read8_mmio(addr); openBus = v; return v
+            let v = read8_mmio(addr)
+            openBus = v
+            return v
         }
+
         if let c = cartridge {
             let mapping = vectorMappingOverride ?? c.mapping
             if let v = readCartridgeByte(c, mapping: mapping, bank: bank, addr: addr) {
+                openBus = v
                 return v
             }
+            let v = c.read8(bank: bank, addr: addr)
+            openBus = v
+            return v
         }
+
         return openBus
     }
+
 
     func read8_dma(bank: u8, addr: u16) -> u8 {
         dmaActive = true
@@ -284,7 +304,7 @@ final class Bus {
             openBus = v
             return v
         }
-        if isIOBank(bank), addr >= 0x2000, addr < 0x2000,
+        if isIOBank(bank), addr >= 0x2000, addr < 0x8000,
            !(MMIO.isMMIO(addr) || addr == 0x4016 || addr == 0x4017) {
             return openBus
         }
@@ -337,16 +357,15 @@ final class Bus {
         cartridge?.write8(bank: bank, addr: addr, value: value)
     }
 
-    private func isIOBank(_ bank: u8) -> Bool { (bank & 0x7F) <= 0x3F }
-
     func read8_mmio(_ addr: u16) -> u8 {
         var v: u8 = openBus
 
-        if addr >= 0x2100 && addr <= 0x21FF {
-            v = ppu?.readRegister(addr: addr, openBus: openBus, video: video) ?? openBus
-
-        } else if addr >= 0x2140 && addr <= 0x2143 {
+        // APU ports must be checked before the broad PPU $2100-$21FF range.
+        if addr >= 0x2140 && addr <= 0x2143 {
             v = apu?.cpuReadPort(Int(addr - 0x2140)) ?? openBus
+
+        } else if addr >= 0x2100 && addr <= 0x21FF {
+            v = ppu?.readRegister(addr: addr, openBus: openBus, video: video) ?? openBus
 
         } else if addr == 0x2180 {
             v = wram.read8(offset: wramPortAddr)
@@ -362,6 +381,8 @@ final class Bus {
 
         } else if addr == 0x4016 {
             v = joypads.read4016()
+        } else if addr == 0x4017 {
+            v = joypads.read4017()
         }
 
         openBus = v
@@ -381,22 +402,20 @@ final class Bus {
             wramPortAddr = (wramPortAddr + 1) & 0x1FFFF
             return
         }
-
         if addr == 0x2181 {
             wramPortAddr = (wramPortAddr & 0x1FF00) | Int(value)
             return
         }
-
         if addr == 0x2182 {
             wramPortAddr = (wramPortAddr & 0x100FF) | (Int(value) << 8)
             return
         }
-
         if addr == 0x2183 {
             wramPortAddr = (wramPortAddr & 0x0FFFF) | ((Int(value) & 0x01) << 16)
             return
         }
 
+        // APU ports must be checked before the broad PPU $2100-$21FF range.
         if addr >= 0x2140 && addr <= 0x2143 {
             apu?.cpuWritePort(Int(addr - 0x2140), value: value)
             return
@@ -419,6 +438,7 @@ final class Bus {
             return
         }
     }
+
 
 
     private func beginAutoJoypad() {

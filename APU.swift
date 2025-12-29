@@ -97,14 +97,7 @@ final class APU {
                 stubIPLZeroAckCountdown = 256
                 stubIPLZeroAckRequested = false
 
-                if apuToCpu[0] != 0x00 || apuToCpu[1] != 0xBB {
-                    apuToCpu = [0x00, 0xBB, 0x00, 0x00]
-                    lastApuToCpuWrite = [0x00, 0xBB, 0x00, 0x00]
-                    pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: 0, value: 0x00))
-                    pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: 1, value: 0xBB))
-                }
-
-                // Exit IPL immediately so the SPC can start executing program RAM.
+                // Exit IPL so the SPC can start executing program RAM.
                 iplEnabled = false
                 spc.pc = 0x0000
             } else {
@@ -142,7 +135,17 @@ final class APU {
                 }
 
 
-                if stubIPLZeroAckRequested && stubIPLZeroAckCountdown == 0 {
+                
+                // If the CPU sends the standard $CC handshake on port 0, reflect it back on APU->CPU port 0.
+                // Many boot sequences poll $2140 for $AA, then write $CC and wait for $CC echoed back.
+                if cpuToApu[0] == 0xCC {
+                    if apuToCpu[0] != 0xCC {
+                        apuToCpu[0] = 0xCC
+                        lastApuToCpuWrite[0] = 0xCC
+                        pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: 0, value: 0xCC))
+                    }
+                }
+if stubIPLZeroAckRequested && stubIPLZeroAckCountdown == 0 {
                     stubHandshakePhase = .zeroAckCountdown
                     stubIPLZeroAckCountdown = 256
                     stubIPLZeroAckRequested = false
