@@ -20,10 +20,6 @@ final class WRAM {
     }
 
     func write8(offset: Int, value: u8) {
-        if value != 0 {
-            let off = offset & (data.count - 1)
-            Log.debug(String(format: "WRAM write non-zero at $%05X = $%02X", off, Int(value)))
-        }
         data[offset & (data.count - 1)] = value
     }
 }
