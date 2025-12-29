@@ -91,6 +91,8 @@ final class APU {
             }
             
             if stubIPLZeroAckRequested {
+                // CPU acknowledged the power-on signature by writing 00 to port 0.
+                // Drive 00/BB immediately, and leave IPL mode so the SPC program in RAM can begin.
                 stubHandshakePhase = .zeroAckCountdown
                 stubIPLZeroAckCountdown = 256
                 stubIPLZeroAckRequested = false
@@ -101,6 +103,10 @@ final class APU {
                     pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: 0, value: 0x00))
                     pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: 1, value: 0xBB))
                 }
+
+                // Exit IPL immediately so the SPC can start executing program RAM.
+                iplEnabled = false
+                spc.pc = 0x0000
             } else {
                 stubIPLZeroAckCountdown = 0
                 stubIPLZeroAckRequested = false
@@ -117,20 +123,24 @@ final class APU {
         case .waitCommand:
             switch stubHandshakePhase {
             case .powerOnSignature:
-                if !stubIPLSuppressPowerOnSignature && !stubIPLPort0HardZeroLock && (apuToCpu[0] != 0xAA || apuToCpu[1] != 0xBB) {
-                    if stubIPLPort0HardZeroLock {
+                // Present the power-on signature (AA/BB) until the CPU acknowledges by writing 00 to port 0.
+                // Some games poll $2140 waiting for it to become 00; when that happens we must drive 00/BB regardless
+                // of whether signature presentation is suppressed.
+                if stubIPLPort0HardZeroLock {
+                    if apuToCpu[0] != 0x00 || apuToCpu[1] != 0xBB {
                         apuToCpu = [0x00, 0xBB, 0x00, 0x00]
                         lastApuToCpuWrite = [0x00, 0xBB, 0x00, 0x00]
                         pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: 0, value: 0x00))
                         pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: 1, value: 0xBB))
-                    } else {
-                        apuToCpu = [0xAA, 0xBB, 0x00, 0x00]
-                        stubIPLHasPresentedPowerOnSignature = true
-                        lastApuToCpuWrite = [0xAA, 0xBB, 0x00, 0x00]
-                        if !stubIPLPort0HardZeroLock { pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: 0, value: 0xAA)) }
-                        pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: 1, value: 0xBB))
                     }
+                } else if !stubIPLSuppressPowerOnSignature && (apuToCpu[0] != 0xAA || apuToCpu[1] != 0xBB) {
+                    apuToCpu = [0xAA, 0xBB, 0x00, 0x00]
+                    stubIPLHasPresentedPowerOnSignature = true
+                    lastApuToCpuWrite = [0xAA, 0xBB, 0x00, 0x00]
+                    pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: 0, value: 0xAA))
+                    pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: 1, value: 0xBB))
                 }
+
 
                 if stubIPLZeroAckRequested && stubIPLZeroAckCountdown == 0 {
                     stubHandshakePhase = .zeroAckCountdown
@@ -350,10 +360,10 @@ final class APU {
         let cycles = spcCycleAcc / Self.masterCyclesPerSPC
         if cycles <= 0 { return }
         spcCycleAcc -= cycles * Self.masterCyclesPerSPC
+        applyPendingCpuPorts()
         if usingStubIPL, iplEnabled {
             if stepStubIPL(spc) > 0 { return }
         }
-        applyPendingCpuPorts()
         spcJIT.run(cpu: spc, apu: self, interpreter: interp, cycles: cycles)
         timers.step(spcCycles: cycles)
         for _ in 0..<cycles {
@@ -392,7 +402,9 @@ final class APU {
 
         if iplEnabled && usingStubIPL {
             if idx == 0 && value == 0x00 {
-                if stubHandshakePhase == .powerOnSignature && stubIPLHasPresentedPowerOnSignature {
+                // CPU acknowledging the APU power-on signature by writing 00 to port 0.
+                // Some software does this very early; do not require that we already "presented" AA/BB.
+                if stubHandshakePhase == .powerOnSignature {
                     stubIPLPort0HardZeroLock = true
                     stubIPLZeroAckRequested = true
                     stubIPLSuppressPowerOnSignature = true
