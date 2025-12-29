@@ -15,7 +15,6 @@ enum ROMLoader {
         }
 
         var raw = [u8](data)
-
         var rom = selectBestROMBytes(raw: raw)
 
         guard rom.count >= 0x10000 else {
@@ -82,7 +81,6 @@ enum ROMLoader {
         let reset = (rvHi << 8) | rvLo
 
         if reset == 0x0000 || reset == 0xFFFF { return false }
-
         if reset < 0x8000 { return false }
 
         let cart = Cartridge(rom: rom, mapping: mapping, sramSizeBytes: 0)
@@ -117,7 +115,6 @@ enum ROMLoader {
         guard headerOffset >= 0, headerOffset + 0x40 <= rom.count else { return Int.min }
 
         var score = 0
-
         let mapMode = rom[headerOffset + 0x15]
         let looksHiROM = (mapMode & 0x01) != 0
         switch mapping {
@@ -163,7 +160,6 @@ enum ROMLoader {
             guard base.count >= 0x10000 else { continue }
 
             let candidate = pickBestROMVariant(rom: base)
-
             let evalROM: [u8]
             if candidate.count % 1024 == 512, candidate.count > 512 {
                 evalROM = Array(candidate.dropFirst(512))
@@ -207,24 +203,18 @@ enum ROMLoader {
         func bestScore(_ r: [u8]) -> Int {
             let lo = scoreHeader(rom: r, headerOffset: 0x7FC0, expected: .loROM)
             let hi = scoreHeader(rom: r, headerOffset: 0xFFC0, expected: .hiROM)
-
             var s = max(lo, hi)
-
             let loSane = isMappingSane(rom: r, mapping: .loROM, headerOffset: 0x7FC0)
             let hiSane = isMappingSane(rom: r, mapping: .hiROM, headerOffset: 0xFFC0)
-
             if loSane { s += 120 }
             if hiSane { s += 120 }
             if !loSane && !hiSane { s -= 200 }
-
             return s
         }
 
         let originalScore = bestScore(rom)
-
         let de32 = deinterleave(rom, chunkSize: 0x8000, swapSize: 0x4000)
         let de32Score = bestScore(de32)
-
         let de64 = deinterleave(rom, chunkSize: 0x10000, swapSize: 0x8000)
         let de64Score = bestScore(de64)
 
@@ -246,7 +236,6 @@ enum ROMLoader {
         if let bestName {
             Log.info("Detected interleaved ROM layout (\(bestName)); de-interleaved for loading (score \(originalScore) -> \(bestS))")
         }
-
         return best
     }
 
@@ -317,8 +306,7 @@ enum ROMLoader {
             }
         }()
         if let o = entryOff, o >= 0, o < rom.count {
-            let op = rom[o]
-            if op == 0xFF { vecScore -= 8 }
+            if rom[o] == 0xFF { vecScore -= 8 }
         } else {
             vecScore -= 8
         }

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Cartridge ROM/SRAM mapping (Phase 2: basic LoROM/HiROM).
 final class Cartridge {
     enum Mapping {
         case loROM
@@ -10,11 +9,7 @@ final class Cartridge {
 
     let rom: [u8]
     let mapping: Mapping
-
-    // SRAM (battery-backed) – size may be 0.
     private var sram: [u8]
-
-    // MARK: - SRAM Info
 
     var sramCapacity: Int { sram.count }
     var hasSRAM: Bool { !sram.isEmpty }
@@ -25,15 +20,12 @@ final class Cartridge {
         self.sram = sramSizeBytes > 0 ? Array(repeating: 0x00, count: sramSizeBytes) : []
     }
 
-    // MARK: - Public bus access
-
     func read8(bank: u8, addr: u16) -> u8 {
         if isSRAM(bank: bank, addr: addr) {
             let off = sramOffset(bank: bank, addr: addr)
             if off >= 0 && off < sram.count { return sram[off] }
             return 0xFF
         }
-
         guard let off = romOffset(bank: bank, addr: addr) else { return 0xFF }
         guard off >= 0 && off < rom.count else { return 0xFF }
         return rom[off]
@@ -46,24 +38,19 @@ final class Cartridge {
         sram[off] = value
     }
 
-    // MARK: - Mapping helpers
-
     func romOffset(bank: u8, addr: u16) -> Int? {
-        let b = Int(bank & 0x7F)
+        let b = Int(bank)
         if b == 0x7E || b == 0x7F { return nil }
-
         switch mapping {
         case .loROM:
             if addr >= 0x8000 {
-                return (b * 0x8000) + Int(addr - 0x8000)
+                return ((b & 0x7F) * 0x8000) + Int(addr - 0x8000)
             }
-            if b >= 0x40 {
-                return ((b - 0x40) * 0x8000) + Int(addr)
+            if (b >= 0x40 && b <= 0x7D) || b >= 0xC0 {
+                return ((b & 0x3F) * 0x8000) + Int(addr)
             }
             return nil
-
         case .hiROM:
-            // HiROM valid banks: $C0–$FF only
             if b < 0xC0 { return nil }
             return (Int(b - 0xC0) * 0x10000) + Int(addr)
         case .unknown:
@@ -72,7 +59,7 @@ final class Cartridge {
     }
 
     private func isSRAM(bank: u8, addr: u16) -> Bool {
-        let b = Int(bank & 0x7F)
+        let b = Int(bank)
         switch mapping {
         case .loROM:
             return (b >= 0x70 && b <= 0x7D) && addr < 0x8000
@@ -84,7 +71,7 @@ final class Cartridge {
     }
 
     private func sramOffset(bank: u8, addr: u16) -> Int {
-        let b = Int(bank & 0x7F)
+        let b = Int(bank)
         switch mapping {
         case .loROM:
             return (b - 0x70) * 0x8000 + Int(addr)
@@ -94,8 +81,6 @@ final class Cartridge {
             return 0
         }
     }
-
-    // MARK: - Persistence
 
     func loadSRAM(_ data: [u8]) {
         guard hasSRAM else { return }

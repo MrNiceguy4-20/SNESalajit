@@ -2,8 +2,6 @@ import Foundation
 
 enum CPUAddressing {
 
-    // MARK: - Immediate
-
     @inline(__always)
     static func imm8(cpu: CPU65816, bus: Bus) -> u8 {
         _ = bus
@@ -15,8 +13,6 @@ enum CPUAddressing {
         _ = bus
         return cpu.fetch16()
     }
-
-    // MARK: - Direct Page
 
     @inline(__always)
     static func dp(cpu: CPU65816, bus: Bus) -> u16 {
@@ -41,7 +37,6 @@ enum CPUAddressing {
         return cpu.r.dp &+ off &+ y
     }
 
-    /// (dp) indirect. Pointer is read from direct page; data is fetched using DB as bank.
     @inline(__always)
     static func dpIndirect(cpu: CPU65816, bus: Bus) -> u16 {
         _ = bus
@@ -50,7 +45,6 @@ enum CPUAddressing {
         return cpu.read16(0x00, ptr)
     }
 
-    /// (dp,X) indirect. Pointer offset is X-indexed within direct page.
     @inline(__always)
     static func dpIndirectX(cpu: CPU65816, bus: Bus) -> u16 {
         _ = bus
@@ -60,7 +54,6 @@ enum CPUAddressing {
         return cpu.read16(0x00, ptr)
     }
 
-    /// (dp),Y indirect. Pointer is read from direct page then Y-indexed.
     @inline(__always)
     static func dpIndirectY(cpu: CPU65816, bus: Bus) -> u16 {
         _ = bus
@@ -71,49 +64,40 @@ enum CPUAddressing {
         return base &+ y
     }
 
-
-    /// [dp] indirect long. Pointer is a 24-bit address read from direct page.
     @inline(__always)
     static func dpIndirectLong(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
         _ = bus
         let off = u16(cpu.fetch8())
         let ptr0 = cpu.r.dp &+ off
-        
-        // IMPORTANT: The pointer bytes wrap within the 256-byte direct page window.
-        // i.e. (ptr0+1) and (ptr0+2) keep the same high byte as ptr0.
-        let ptr1 = (ptr0 & 0xFF00) | u16(u8(truncatingIfNeeded: ptr0 &+ 1))
-        let ptr2 = (ptr0 & 0xFF00) | u16(u8(truncatingIfNeeded: ptr0 &+ 2))
-        
+        let ptr1 = ptr0 &+ 1
+        let ptr2 = ptr0 &+ 2
+
         let lo = cpu.read8(0x00, ptr0)
         let hi = cpu.read8(0x00, ptr1)
         let bank = cpu.read8(0x00, ptr2)
-        
+
         let addr = u16(lo) | (u16(hi) << 8)
         return (addr, bank)
     }
-        @inline(__always)
+
+    @inline(__always)
     static func dpIndirectLongY(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
         _ = bus
-
         let off = u16(cpu.fetch8())
-        let ptr = cpu.r.dp &+ off
+        let ptr0 = cpu.r.dp &+ off
+        let ptr1 = ptr0 &+ 1
+        let ptr2 = ptr0 &+ 2
 
-        // Pointer fetch is a linear 16-bit increment in bank $00 (no zero-page-style wrap).
-        let lo = cpu.read8(0x00, ptr)
-        let hi = cpu.read8(0x00, ptr &+ 1)
-        let ba = cpu.read8(0x00, ptr &+ 2)
+        let lo = cpu.read8(0x00, ptr0)
+        let hi = cpu.read8(0x00, ptr1)
+        let ba = cpu.read8(0x00, ptr2)
 
         let y = cpu.xIs8() ? u32(u8(truncatingIfNeeded: cpu.r.y)) : u32(cpu.r.y)
-
         let base24 = (u32(ba) << 16) | (u32(hi) << 8) | u32(lo)
         let final24 = (base24 &+ y) & 0x00FF_FFFF
 
         return (u16(final24 & 0xFFFF), u8((final24 >> 16) & 0xFF))
     }
-        
-
-
-    // MARK: - Absolute
 
     @inline(__always)
     static func abs16(cpu: CPU65816, bus: Bus) -> u16 {
@@ -137,17 +121,12 @@ enum CPUAddressing {
         return base &+ y
     }
 
-    // MARK: - Indirect
-
-    /// JMP ($addr) in emulation: indirect wraps within bank 0 (we use bank = PB for fetch, then bank 0 for pointer read).
     @inline(__always)
     static func absIndirect(cpu: CPU65816, bus: Bus) -> u16 {
         let ptr = cpu.fetch16()
         _ = bus
         return cpu.read16(0x00, ptr)
     }
-
-    // MARK: - Long and relative long
 
     @inline(__always)
     static func absLong(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
@@ -164,8 +143,6 @@ enum CPUAddressing {
         return (base.addr &+ x, base.bank)
     }
 
-    // MARK: - Relative
-
     @inline(__always)
     static func rel8(cpu: CPU65816, bus: Bus) -> Int8 {
         _ = bus
@@ -178,15 +155,10 @@ enum CPUAddressing {
         return Int16(bitPattern: cpu.fetch16())
     }
 
-
-// MARK: - Stack relative
-
-/// Stack-relative addressing (sr). Effective address is S + immediate8 (bank $00).
-@inline(__always)
-static func stackRelative(cpu: CPU65816, bus: Bus) -> u16 {
-    _ = bus
-    let off = u16(cpu.fetch8())
-    return cpu.r.sp &+ off
-}
-
+    @inline(__always)
+    static func stackRelative(cpu: CPU65816, bus: Bus) -> u16 {
+        _ = bus
+        let off = u16(cpu.fetch8())
+        return cpu.r.sp &+ off
+    }
 }

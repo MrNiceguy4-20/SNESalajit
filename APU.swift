@@ -87,7 +87,6 @@ final class APU {
                 stubHandshakePhase = .powerOnSignature
                 stubIPLPort0HardZeroLock = false
                 stubIPLZeroAckHoldCountdown = 0
-                stubIPLZeroAckHoldCountdown = 0
                 stubIPLDidOneShotEchoRestore = false
             }
             
@@ -107,7 +106,6 @@ final class APU {
                 stubIPLZeroAckRequested = false
                 stubHandshakePhase = .powerOnSignature
                 stubIPLPort0HardZeroLock = false
-                stubIPLZeroAckHoldCountdown = 0
                 stubIPLZeroAckHoldCountdown = 0
                 stubIPLDidOneShotEchoRestore = false
                 stubIPLSuppressPowerOnSignature = false
@@ -321,7 +319,6 @@ final class APU {
         stubHandshakePhase = .powerOnSignature
         stubIPLPort0HardZeroLock = false
         stubIPLZeroAckHoldCountdown = 0
-        stubIPLZeroAckHoldCountdown = 0
         stubIPLDidOneShotEchoRestore = false
         stubIPLSuppressPowerOnSignature = false
         stubIPLHasPresentedPowerOnSignature = false
@@ -334,7 +331,6 @@ final class APU {
         timers.reset()
         iplEnabled = true
         spcCycleAcc = 0
-        Log.debug("APU reset; RAM cleared and timers reset", component: .apu)
     }
 
     @inline(__always)
@@ -377,29 +373,18 @@ final class APU {
     func cpuReadPort(_ i: Int) -> u8 { apuToCpu[i & 3] }
 
     func cpuWritePort(_ i: Int, value: u8) {
+        if iplEnabled && usingStubIPL && i == 0 {
+            if value != 0x00 {
+                stubIPLSuppressPowerOnSignature = true
+                stubHandshakePhase = .echo
+                stubIPLPort0HardZeroLock = false
 
-// --- Stub IPL handshake support ---
-// When using the stub IPL (SPC700 not actually executing), the CPU often polls
-// APUIO0 ($2140) for the value it just wrote. Provide an immediate echo for
-// all non-zero writes to port0 so CMP $2140 / BNE loops can terminate.
-//
-// IMPORTANT: Once the CPU starts writing non-zero values to APUIO0, we must not
-// re-assert the power-on signature ($AA/$BB) onto port0, or the CPU will keep
-// seeing $AA and spin forever. We therefore suppress any further signature writes
-// to port0 once we have echoed a CPU write.
-if iplEnabled && usingStubIPL && i == 0 {
-    if value != 0x00 {
-        stubIPLSuppressPowerOnSignature = true
-        stubHandshakePhase = .echo
-        stubIPLPort0HardZeroLock = false
-
-        apuWritePort(1, value: 0xBB)
-        apuWritePort(0, value: value)
-        lastCpuToApuWrite[i] = value
-        return
-    }
-    // value == 0x00: fall through to existing reset/zero-ack logic.
-}
+                apuWritePort(1, value: 0xBB)
+                apuWritePort(0, value: value)
+                lastCpuToApuWrite[i] = value
+                return
+            }
+        }
         let idx = i & 3
         cpuToApuPending[idx] = value
         cpuToApuPendingMask |= (1 << idx)
@@ -417,10 +402,6 @@ if iplEnabled && usingStubIPL && i == 0 {
             if value != 0x00 && stubHandshakePhase == .zeroAckLatched {
                 stubHandshakePhase = .echo
                 stubIPLPort0HardZeroLock = false
-                stubIPLZeroAckHoldCountdown = 0
-                stubIPLZeroAckHoldCountdown = 0
-                stubIPLPort0HardZeroLock = false
-                stubIPLZeroAckHoldCountdown = 0
                 stubIPLZeroAckHoldCountdown = 0
                 stubIPLDidOneShotEchoRestore = false
             }
@@ -465,7 +446,6 @@ if iplEnabled && usingStubIPL && i == 0 {
         case 0x00F1:
             timers.writeControl(value)
             if (value & 0x80) != 0 {
-                if iplEnabled { Log.debug("APU IPL ROM disabled via $F1", component: .apu) }
                 iplEnabled = false
             }
         case 0x00FA: timers.writeTarget(0, value)

@@ -43,8 +43,6 @@ final class CPU65816 {
     private(set) var irqLine: Bool = false
 
     var nmiPending: Bool = false
-    
-    // New: Tracks if the CPU is halted waiting for an interrupt
     private(set) var isWaiting: Bool = false
 
     func attach(bus: Bus) { self.bus = bus }
@@ -77,7 +75,7 @@ final class CPU65816 {
         nmiLine = false
         irqLine = false
         nmiPending = false
-        isWaiting = false // Reset waiting state
+        isWaiting = false
 
         interpreter.reset()
         jit.reset()
@@ -103,7 +101,6 @@ final class CPU65816 {
         var remaining = cycles
 
         while remaining > 0 {
-            // Interrupts wake the CPU from WAI state
             if nmiPending {
                 isWaiting = false
                 nmiPending = false
@@ -118,7 +115,6 @@ final class CPU65816 {
                 continue
             }
 
-            // If waiting, consume cycles without fetching new opcodes
             if isWaiting {
                 remaining -= 1
                 continue
@@ -292,23 +288,16 @@ final class CPU65816 {
         let vectorAddr: u16
         if r.emulationMode {
             switch kind {
-            case .nmi:
-                vectorAddr = 0xFFFA
-            case .irq, .brk:
-                vectorAddr = 0xFFFE
-            case .cop:
-                vectorAddr = 0xFFF4
+            case .nmi: vectorAddr = 0xFFFA
+            case .irq, .brk: vectorAddr = 0xFFFE
+            case .cop: vectorAddr = 0xFFF4
             }
         } else {
             switch kind {
-            case .nmi:
-                vectorAddr = 0xFFEA
-            case .irq:
-                vectorAddr = 0xFFEE
-            case .brk:
-                vectorAddr = 0xFFE6
-            case .cop:
-                vectorAddr = 0xFFE4
+            case .nmi: vectorAddr = 0xFFEA
+            case .irq: vectorAddr = 0xFFEE
+            case .brk: vectorAddr = 0xFFE6
+            case .cop: vectorAddr = 0xFFE4
             }
         }
 
@@ -364,7 +353,6 @@ final class CPU65816 {
         r.pc = vec
     }
     
-    // New: WAI Method
     func wai() {
         isWaiting = true
     }
@@ -436,13 +424,7 @@ final class CPU65816 {
         traceLast = nil
     }
 
-    func recordInstruction(
-        pb: u8,
-        pc: u16,
-        bytes: [u8],
-        text: String,
-        usedJIT: Bool
-    ) {
+    func recordInstruction(pb: u8, pc: u16, bytes: [u8], text: String, usedJIT: Bool) {
         let entry = InstructionTraceEntry(pb: pb, pc: pc, bytes: bytes, text: text, usedJIT: usedJIT)
         traceBuf[traceHead] = entry
         traceHead = (traceHead + 1) & (traceBuf.count - 1)
@@ -450,12 +432,7 @@ final class CPU65816 {
         traceLast = entry
     }
 
-    func recordEvent(
-        pb: u8,
-        pc: u16,
-        text: String,
-        usedJIT: Bool
-    ) {
+    func recordEvent(pb: u8, pc: u16, text: String, usedJIT: Bool) {
         recordInstruction(pb: pb, pc: pc, bytes: [], text: text, usedJIT: usedJIT)
     }
 

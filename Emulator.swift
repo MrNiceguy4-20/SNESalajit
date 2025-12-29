@@ -1,16 +1,12 @@
 import Foundation
 import Combine
 
-/// Top-level orchestrator. Single-core deterministic stepping.
-///
-/// Phase 2:
-/// - MDMA stalls the CPU for an approximate number of master cycles (bus-owned).
-/// - Timekeeping remains bus-driven (H/V counters, IRQ/NMI edges, etc.).
 final class Emulator {
     let bus = Bus()
     let cpu = CPU65816()
     let ppu = PPU()
     let apu = APU()
+    let irq = InterruptController()
     @Published var framebuffer: Framebuffer?
     private let clock = MasterClock()
     private var romURL: URL?
@@ -20,7 +16,6 @@ final class Emulator {
         ppu.attach(bus: bus)
         apu.attach(bus: bus)
 
-        bus.video.interruptController = bus.irq
         bus.cpu = cpu
         bus.ppu = ppu
         bus.ppuOwner = self
@@ -30,9 +25,9 @@ final class Emulator {
     }
 
     func reset() {
+        irq.reset()
         clock.reset()
         bus.reset()
-        ppu.reset()
         apu.reset()
         cpu.reset()
     }
@@ -48,24 +43,17 @@ final class Emulator {
     }
 
     func step(seconds: Double) {
-        let masterHz = 21_477_272.0
-        let cyclesToRun = Int(masterHz * seconds)
+        let cyclesToRun = Int(MasterClock.masterHz * seconds)
         step(masterCycles: cyclesToRun)
     }
 
-
     func step(masterCycles: Int) {
         var remaining = masterCycles
-
-        // Phase 12: preserve CPU/master ratio exactly (master ~= cpu * 6).
-        // This eliminates long-term drift from integer truncation.
-        var cpuMasterAcc: Int = 0  // remainder in master cycles (0..5)
 
         while remaining > 0 {
             let chunk = min(remaining, 12)
             var slice = chunk
 
-            // 1) MDMA stall consumes master cycles where CPU does not execute.
             let stalled = bus.consumeDMAStall(masterCycles: slice)
             if stalled > 0 {
                 bus.step(masterCycles: stalled)
@@ -76,14 +64,9 @@ final class Emulator {
                 remaining -= stalled
                 slice -= stalled
                 if slice <= 0 { continue }
-
-                // IMPORTANT: do NOT add stalled cycles into cpuMasterAcc.
             }
 
-            // 2) Convert master->CPU cycles with remainder carry (no drift).
-            cpuMasterAcc += slice
-            let cpuCycles = cpuMasterAcc / 6
-            cpuMasterAcc = cpuMasterAcc % 6
+            let cpuCycles = clock.cpuCycles(forMasterCycles: slice)
 
             if cpuCycles > 0 {
                 if !(cpu.isWaiting && !cpu.nmiPending && !cpu.irqLine) {
@@ -91,7 +74,6 @@ final class Emulator {
                 }
             }
 
-            // 3) Advance the rest of the system in master cycles.
             bus.step(masterCycles: slice)
             ppu.step(masterCycles: slice)
             apu.step(masterCycles: slice)

@@ -12,7 +12,7 @@ typealias i32 = Int32
 @inline(__always) func make16(_ lo: u8, _ hi: u8) -> u16 { u16(lo) | (u16(hi) << 8) }
 
 extension UInt32 {
-    /// Pack 8-bit RGBA components into 0xRRGGBBAA.
+
     static func rgba(_ r: u8, _ g: u8, _ b: u8, _ a: u8 = 0xFF) -> UInt32 {
         (UInt32(a) << 24) | (UInt32(b) << 16) | (UInt32(g) << 8) | UInt32(r)
     }

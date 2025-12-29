@@ -1,12 +1,6 @@
 import Foundation
 
-/// General DMA engine (triggered by writes to $420B).
-///
-/// Phase 2 additions:
-/// - Returns an approximate master-cycle stall cost for CPU blocking during DMA.
 final class DMAEngine {
-
-    // MARK: - Debug
 
     struct DMAChannelDebugState {
         let index: Int
@@ -19,7 +13,6 @@ final class DMAEngine {
         let a2b: u8
         let ntr: u8
 
-        // HDMA runtime (Phase 2 skeleton)
         let hdmaTableAddr: u16
         let hdmaBank: u8
         let hdmaLineCounter: u8
@@ -53,9 +46,6 @@ final class DMAEngine {
 
     private(set) var channels: [DMAChannel] = Array(repeating: DMAChannel(), count: 8)
 
-    /// Very coarse timing model:
-    /// - Treat each transferred byte as consuming this many master cycles of CPU stall.
-    /// (Real SNES DMA timing is more nuanced; this is good enough for deterministic bring-up.)
     private static let masterCyclesPerByte: Int = 8
     private static let masterCyclesPerChannelOverhead: Int = 8
 
@@ -98,14 +88,11 @@ final class DMAEngine {
         }
     }
 
-    /// Start DMA on all enabled channels in `mask`.
-    /// Returns an approximate master-cycle stall cost (CPU is blocked during DMA).
     @discardableResult
     func start(mask: u8, bus: Bus) -> Int {
         var totalBytes = 0
         var channelsRun = 0
 
-        // Each enabled bit triggers a DMA transfer immediately.
         for ch in 0..<8 {
             if (mask & (1 << ch)) == 0 { continue }
             channelsRun += 1
@@ -116,21 +103,17 @@ final class DMAEngine {
         return (totalBytes * DMAEngine.masterCyclesPerByte) + (channelsRun * DMAEngine.masterCyclesPerChannelOverhead)
     }
 
-    /// Runs one DMA channel and returns the number of bytes transferred.
     private func runChannel(_ idx: Int, bus: Bus) -> Int {
         var ch = channels[idx]
-
         let mode = ch.transferMode
         let dirBtoA = ch.directionBtoA
 
-        // Use channel A1T/A1B directly (24-bit advance via advanceABus)
         var remaining = Int(ch.das)
-        if remaining == 0 { remaining = 0x10000 } // hardware: 0 means 65536
+        if remaining == 0 { remaining = 0x10000 }
 
         var transferred = 0
 
         while remaining > 0 {
-            // For each transfer mode, we may do 1-4 bytes per unit.
             let offsets = DMAEngine.transferOffsets(for: mode)
             for off in offsets {
                 if remaining == 0 { break }
@@ -138,20 +121,17 @@ final class DMAEngine {
                 let bOffset = (u16(ch.bbad) &+ u16(off)) & 0x00FF
                 let b = u16(0x2100) &+ bOffset
                 if dirBtoA {
-                    // B -> A
                     let v = bus.read8_mmio(b)
                     let bank = ch.a1b
                     let addr = ch.a1t
                     bus.write8(bank: bank, addr: addr, value: v)
                 } else {
-                    // A -> B
                     let bank = ch.a1b
                     let addr = ch.a1t
                     let v = bus.read8_dma(bank: bank, addr: addr)
                     if v != 0 {
                         Log.debug("DMA write non-zero: $\(Hex.u8(v)) from $\(Hex.u8(bank)):\(Hex.u16(addr))")
                     }
-
                     bus.write8_mmio(b, value: v)
                 }
 
@@ -161,18 +141,12 @@ final class DMAEngine {
             }
         }
 
-        // Store back updated address/size (hardware updates A1T/A1B and sets DAS to 0).
         ch.das = 0
         channels[idx] = ch
 
         return transferred
     }
 
-    
-    // MARK: - HDMA (Phase 2.2 skeleton)
-
-    /// Initialize HDMA runtime state for all enabled channels in `mask`.
-    /// Called at start of VBlank.
     func hdmaInit(mask: u8, bus: Bus) {
         _ = bus
         for ch in 0..<8 {
@@ -186,36 +160,26 @@ final class DMAEngine {
         }
     }
 
-    /// Step HDMA once per visible scanline (very simplified).
-    /// This models the basic table format:
-    /// - A line descriptor byte is fetched when the line counter reaches 0.
-    /// - If descriptor == 0, channel terminates (no further transfers).
-    /// - Bits 0-6 = line count; bit7 = (approx) "no transfer" on first line when set.
-    /// - If transfer occurs, we read N bytes from the table stream and write to B-bus regs ($21xx).
     func hdmaStep(mask: u8, bus: Bus) {
         for ch in 0..<8 {
             if (mask & (1 << ch)) == 0 { continue }
             var c = channels[ch]
 
-            // If never initialized (or reset), seed runtime fields from regs.
             if c.hdmaBank == 0 && c.hdmaTableAddr == 0 {
                 c.hdmaTableAddr = c.a2a
                 c.hdmaBank = c.a2b
             }
 
-            // Terminated channel: do nothing.
             if c.hdmaTableAddr == 0 && c.hdmaLineCounter == 0 {
                 channels[ch] = c
                 continue
             }
 
             if c.hdmaLineCounter == 0 {
-                // Fetch new line descriptor.
                 let desc = bus.read8_dma(bank: c.hdmaBank, addr: c.hdmaTableAddr)
                 c.hdmaTableAddr &+= 1
 
                 if desc == 0 {
-                    // Terminate.
                     c.hdmaTableAddr = 0
                     c.hdmaLineCounter = 0
                     c.hdmaDoTransfer = false
@@ -224,7 +188,6 @@ final class DMAEngine {
                 }
 
                 c.hdmaLineCounter = desc & 0x7F
-                // Approx: bit7 set means "no transfer on this line"; clear means transfer.
                 c.hdmaDoTransfer = (desc & 0x80) == 0
             }
 
@@ -249,17 +212,7 @@ final class DMAEngine {
         }
     }
 
-
     private static func transferOffsets(for mode: Int) -> [Int] {
-        // Common SNES DMA transfer modes:
-        // 0: 1 byte (b)
-        // 1: 2 bytes (b, b+1)
-        // 2: 2 bytes (b, b)
-        // 3: 4 bytes (b, b, b+1, b+1)
-        // 4: 4 bytes (b, b+1, b+2, b+3)
-        // 5: 4 bytes (b, b, b, b)
-        // 6: 2 bytes (b, b+1) [rare]
-        // 7: 4 bytes (b, b+1, b, b+1) [rare]
         switch mode & 7 {
         case 0: return [0]
         case 1: return [0, 1]

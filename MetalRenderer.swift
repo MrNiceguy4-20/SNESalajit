@@ -22,7 +22,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         self.device = device
         self.queue = queue
 
-        // Load shaders from default library
         let library = device.makeDefaultLibrary()
         let vfn = library?.makeFunction(name: "vs_main")
         let ffn = library?.makeFunction(name: "fs_main")
@@ -82,8 +81,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    // MARK: - MTKViewDelegate
-
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { }
 
     func draw(in view: MTKView) {
@@ -105,7 +102,6 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         enc.setFragmentTexture(tex, index: 0)
         enc.setFragmentSamplerState(sampler, index: 0)
 
-        // Fullscreen triangle (no vertex buffer).
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         enc.endEncoding()

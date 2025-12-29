@@ -1,10 +1,9 @@
 import Foundation
 
-/// Simple 32-bit RGBA8 framebuffer for Metal upload.
 struct Framebuffer: Sendable {
     let width: Int
     let height: Int
-    var pixels: [UInt32] // RGBA8 little-endian (memory layout [R, G, B, A])
+    var pixels: [UInt32]
 
     init(width: Int, height: Int, fill: UInt32 = .rgba(0, 0, 0, 0xFF)) {
         self.width = width

@@ -212,10 +212,10 @@ final class SPC700Interpreter {
             case 0x9F: cpu.xcnA(); debt -= 5
             case 0xCF: cpu.mulYA(); debt -= 9
             case 0x9E: cpu.divYAByX(); debt -= 12
-            case 0xDF: cpu.daaA(); debt -= 3 // DAA A
-            case 0xBE: cpu.dasA(); debt -= 3 // DAS A
-            case 0xEF: cpu.halt(.sleep); debt = 0 // SLEEP
-            case 0xFF: cpu.halt(.stop); debt = 0 // STOP
+            case 0xDF: cpu.daaA(); debt -= 3
+            case 0xBE: cpu.dasA(); debt -= 3
+            case 0xEF: cpu.halt(.sleep); debt = 0
+            case 0xFF: cpu.halt(.stop); debt = 0 
             default: debt -= 2
             }
         }

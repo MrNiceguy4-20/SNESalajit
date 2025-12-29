@@ -17,7 +17,6 @@ final class SPC700JIT {
     }
 
     private func compileBlock(startPC: u16) -> UnsafeRawPointer? {
-
         var code: [UInt8] = []
         code += asm.movRCX_RDX()
         code += asm.movRDX(imm64: UInt64(startPC))
@@ -105,7 +104,6 @@ func spc700jit_execHotBlock(
     if cpu.pc != startPC { return spc700jit_pack(nextPC: 0xFFFF, remaining: Int(cycles)) }
 
     var remaining = Int(cycles)
-
     let maxInsns = 32
     var insns = 0
 
@@ -166,6 +164,7 @@ func spc700jit_execHotBlock(
         let addr = u16(word & 0x1FFF)
         return (addr, bit)
     }
+
     @inline(__always)
     func indYAddr(_ dp: u8) -> u16 {
         let p = u16(dp)
@@ -183,29 +182,24 @@ func spc700jit_execHotBlock(
         let op = cpu.fetch8(apu)
 
         switch op {
-
         case 0x00:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             remaining -= 2
-
         case 0xE8:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.a = cpu.fetch8(apu)
             cpu.updateNZ(cpu.a)
             remaining -= 2
-
         case 0xCD:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.x = cpu.fetch8(apu)
             cpu.updateNZ(cpu.x)
             remaining -= 2
-
         case 0x8D:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.y = cpu.fetch8(apu)
             cpu.updateNZ(cpu.y)
             remaining -= 2
-
         case 0xE4:
             if remaining < 3 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -214,7 +208,6 @@ func spc700jit_execHotBlock(
             cpu.a = apu.read8(addr)
             cpu.updateNZ(cpu.a)
             remaining -= 3
-
         case 0xC4:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -222,25 +215,21 @@ func spc700jit_execHotBlock(
             if isIO(addr) { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             apu.write8(addr, cpu.a)
             remaining -= 4
-
         case 0xBC:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.a &+= 1
             cpu.updateNZ(cpu.a)
             remaining -= 2
-
         case 0x9C:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.a &-= 1
             cpu.updateNZ(cpu.a)
             remaining -= 2
-
         case 0x2F:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let rel = Int(Int8(bitPattern: cpu.fetch8(apu)))
             cpu.pc = u16(truncatingIfNeeded: Int32(cpu.pc) + Int32(rel))
             remaining -= 4
-
         case 0xF0:
             let rel = Int(Int8(bitPattern: cpu.fetch8(apu)))
             if cpu.flag(SPC700.Z) {
@@ -251,7 +240,6 @@ func spc700jit_execHotBlock(
                 if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
                 remaining -= 2
             }
-
         case 0xD0:
             let rel = Int(Int8(bitPattern: cpu.fetch8(apu)))
             if !cpu.flag(SPC700.Z) {
@@ -262,7 +250,6 @@ func spc700jit_execHotBlock(
                 if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
                 remaining -= 2
             }
-
         case 0x90:
             let rel = Int(Int8(bitPattern: cpu.fetch8(apu)))
             if !cpu.flag(SPC700.C) {
@@ -273,7 +260,6 @@ func spc700jit_execHotBlock(
                 if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
                 remaining -= 2
             }
-
         case 0xB0:
             let rel = Int(Int8(bitPattern: cpu.fetch8(apu)))
             if cpu.flag(SPC700.C) {
@@ -284,7 +270,6 @@ func spc700jit_execHotBlock(
                 if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
                 remaining -= 2
             }
-
         case 0x10:
             let rel = Int(Int8(bitPattern: cpu.fetch8(apu)))
             if !cpu.flag(SPC700.N) {
@@ -295,7 +280,6 @@ func spc700jit_execHotBlock(
                 if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
                 remaining -= 2
             }
-
         case 0x30:
             let rel = Int(Int8(bitPattern: cpu.fetch8(apu)))
             if cpu.flag(SPC700.N) {
@@ -306,7 +290,6 @@ func spc700jit_execHotBlock(
                 if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
                 remaining -= 2
             }
-
         case 0x50:
             let rel = Int(Int8(bitPattern: cpu.fetch8(apu)))
             if !cpu.flag(SPC700.V) {
@@ -317,7 +300,6 @@ func spc700jit_execHotBlock(
                 if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
                 remaining -= 2
             }
-
         case 0x70:
             let rel = Int(Int8(bitPattern: cpu.fetch8(apu)))
             if cpu.flag(SPC700.V) {
@@ -336,7 +318,6 @@ func spc700jit_execHotBlock(
             cpu.a = apu.read8(addr)
             cpu.updateNZ(cpu.a)
             remaining -= 4
-
         case 0xD4:
             if remaining < 5 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -344,61 +325,50 @@ func spc700jit_execHotBlock(
             if isIO(addr) { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             apu.write8(addr, cpu.a)
             remaining -= 5
-
         case 0x28:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.a &= cpu.fetch8(apu)
             cpu.updateNZ(cpu.a)
             remaining -= 2
-
         case 0x08:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.a |= cpu.fetch8(apu)
             cpu.updateNZ(cpu.a)
             remaining -= 2
-
         case 0x48:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.a ^= cpu.fetch8(apu)
             cpu.updateNZ(cpu.a)
             remaining -= 2
-
         case 0x68:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let v = cpu.fetch8(apu)
             cpu.cmp(cpu.a, v)
             remaining -= 2
-
         case 0x60:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.setFlag(SPC700.C, false)
             remaining -= 2
-
         case 0x80:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.setFlag(SPC700.C, true)
             remaining -= 2
-
         case 0x20:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.setFlag(SPC700.P, false)
             remaining -= 2
-
         case 0x40:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.setFlag(SPC700.P, true)
             remaining -= 2
-
         case 0xC0:
             if remaining < 3 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.setFlag(SPC700.I, false)
             remaining -= 3
-
         case 0xA0:
             if remaining < 3 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.setFlag(SPC700.I, true)
             remaining -= 3
-
         case 0x04, 0x24, 0x44, 0x64, 0x84, 0xA4:
             if remaining < 3 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -414,7 +384,6 @@ func spc700jit_execHotBlock(
             default:   cpu.sbc(m)
             }
             remaining -= 3
-
         case 0x14, 0x34, 0x54, 0x74, 0x94, 0xB4:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -430,7 +399,6 @@ func spc700jit_execHotBlock(
             default:   cpu.sbc(m)
             }
             remaining -= 4
-
         case 0xE7, 0xF7:
             if remaining < 6 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let dp = cpu.fetch8(apu)
@@ -439,7 +407,6 @@ func spc700jit_execHotBlock(
             cpu.a = apu.read8(addr)
             cpu.updateNZ(cpu.a)
             remaining -= 6
-
         case 0x07, 0x27, 0x47, 0x67, 0x87, 0xA7:
             if remaining < 6 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let dp = cpu.fetch8(apu)
@@ -455,7 +422,6 @@ func spc700jit_execHotBlock(
             default:   cpu.sbc(m)
             }
             remaining -= 6
-
         case 0x17, 0x37, 0x57, 0x77, 0x97, 0xB7:
             if remaining < 6 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let dp = cpu.fetch8(apu)
@@ -471,7 +437,6 @@ func spc700jit_execHotBlock(
             default:   cpu.sbc(m)
             }
             remaining -= 6
-
         case 0xCB:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -479,7 +444,6 @@ func spc700jit_execHotBlock(
             if isIO(addr) { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             apu.write8(addr, cpu.y)
             remaining -= 4
-
         case 0xDB:
             if remaining < 5 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -487,7 +451,6 @@ func spc700jit_execHotBlock(
             if isIO(addr) { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             apu.write8(addr, cpu.y)
             remaining -= 5
-
         case 0xD8:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -495,7 +458,6 @@ func spc700jit_execHotBlock(
             if isIO(addr) { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             apu.write8(addr, cpu.x)
             remaining -= 4
-
         case 0x8F:
             if remaining < 5 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let imm = cpu.fetch8(apu)
@@ -504,7 +466,6 @@ func spc700jit_execHotBlock(
             if isIO(addr) { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             apu.write8(addr, imm)
             remaining -= 5
-
         case 0xAB:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -514,7 +475,6 @@ func spc700jit_execHotBlock(
             apu.write8(addr, v)
             cpu.updateNZ(v)
             remaining -= 4
-
         case 0xBB:
             if remaining < 5 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -524,7 +484,6 @@ func spc700jit_execHotBlock(
             apu.write8(addr, v)
             cpu.updateNZ(v)
             remaining -= 5
-
         case 0x8B:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -534,7 +493,6 @@ func spc700jit_execHotBlock(
             apu.write8(addr, v)
             cpu.updateNZ(v)
             remaining -= 4
-
         case 0x9B:
             if remaining < 5 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -544,27 +502,22 @@ func spc700jit_execHotBlock(
             apu.write8(addr, v)
             cpu.updateNZ(v)
             remaining -= 5
-
         case 0x1C:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.a = cpu.asl(cpu.a)
             remaining -= 2
-
         case 0x5C:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.a = cpu.lsr(cpu.a)
             remaining -= 2
-
         case 0x3C:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.a = cpu.rol(cpu.a)
             remaining -= 2
-
         case 0x7C:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.a = cpu.ror(cpu.a)
             remaining -= 2
-
         case 0x0B, 0x4B, 0x2B, 0x6B:
             if remaining < 5 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -579,7 +532,6 @@ func spc700jit_execHotBlock(
             }
             apu.write8(addr, v)
             remaining -= 5
-
         case 0x1B, 0x5B, 0x3B, 0x7B:
             if remaining < 6 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -594,33 +546,27 @@ func spc700jit_execHotBlock(
             }
             apu.write8(addr, v)
             remaining -= 6
-
         case 0x9F:
             if remaining < 2 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.xcnA()
             remaining -= 2
-
         case 0xCF:
             if remaining < 9 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.mulYA()
             remaining -= 9
-
         case 0x9E:
             if cpu.x == 0 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             if remaining < 12 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.divYAByX()
             remaining -= 12
-
         case 0xDF:
             if remaining < 3 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.daaA()
             remaining -= 3
-
         case 0xBE:
             if remaining < 3 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             cpu.dasA()
             remaining -= 3
-
         case 0xE5:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let addr = cpu.fetch16(apu)
@@ -628,14 +574,12 @@ func spc700jit_execHotBlock(
             cpu.a = apu.read8(addr)
             cpu.updateNZ(cpu.a)
             remaining -= 4
-
         case 0xC5:
             if remaining < 5 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let addr = cpu.fetch16(apu)
             if isIO(addr) { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             apu.write8(addr, cpu.a)
             remaining -= 5
-
         case 0x05, 0x25, 0x45, 0x65, 0x85, 0xA5:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let addr = cpu.fetch16(apu)
@@ -650,7 +594,6 @@ func spc700jit_execHotBlock(
             default:   cpu.sbc(m)
             }
             remaining -= 4
-
         case 0x15, 0x35, 0x55, 0x75, 0x95, 0xB5:
             if remaining < 5 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let addr = cpu.fetch16(apu) &+ u16(cpu.x)
@@ -665,7 +608,6 @@ func spc700jit_execHotBlock(
             default:   cpu.sbc(m)
             }
             remaining -= 5
-
         case 0x16, 0x36, 0x56, 0x76, 0x96, 0xB6:
             if remaining < 5 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let addr = cpu.fetch16(apu) &+ u16(cpu.y)
@@ -680,7 +622,6 @@ func spc700jit_execHotBlock(
             default:   cpu.sbc(m)
             }
             remaining -= 5
-
         case 0x0C, 0x4C, 0x2C, 0x6C:
             if remaining < 6 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let addr = cpu.fetch16(apu)
@@ -694,7 +635,6 @@ func spc700jit_execHotBlock(
             }
             apu.write8(addr, v)
             remaining -= 6
-
         case 0xBA:
             if remaining < 3 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let addr = readDP16(cpu.fetch8(apu))
@@ -702,7 +642,6 @@ func spc700jit_execHotBlock(
             cpu.a = apu.read8(addr)
             cpu.updateNZ(cpu.a)
             remaining -= 3
-
         case 0xDA:
             if remaining < 5 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let off = cpu.fetch8(apu)
@@ -710,7 +649,6 @@ func spc700jit_execHotBlock(
             if isIO(addr) { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             apu.write8(addr, cpu.a)
             remaining -= 5
-
         case 0x02:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let (addr, bit) = absBitOperand()
@@ -719,7 +657,6 @@ func spc700jit_execHotBlock(
             v |= (1 << bit)
             apu.write8(addr, v)
             remaining -= 4
-
         case 0x22:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let (addr, bit) = absBitOperand()
@@ -728,7 +665,6 @@ func spc700jit_execHotBlock(
             v &= ~(1 << bit)
             apu.write8(addr, v)
             remaining -= 4
-
         case 0x42:
             if remaining < 5 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let (addr, bit) = absBitOperand()
@@ -737,7 +673,6 @@ func spc700jit_execHotBlock(
             v ^= (1 << bit)
             apu.write8(addr, v)
             remaining -= 5
-
         case 0xAA:
             if remaining < 4 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let (addr, bit) = absBitOperand()
@@ -745,7 +680,6 @@ func spc700jit_execHotBlock(
             let v = apu.read8(addr)
             cpu.setFlag(SPC700.C, ((v >> bit) & 1) != 0)
             remaining -= 4
-
         case 0xCA:
             if remaining < 6 { cpu.pc = opPC; return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining) }
             let (addr, bit) = absBitOperand()
@@ -755,11 +689,9 @@ func spc700jit_execHotBlock(
             v = c ? (v | (1 << bit)) : (v & ~(1 << bit))
             apu.write8(addr, v)
             remaining -= 6
-
         default:
             return spc700jit_pack(nextPC: 0xFFFF, remaining: remaining)
         }
-
         insns += 1
     }
 

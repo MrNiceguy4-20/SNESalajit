@@ -1,14 +1,5 @@
 import Foundation
 
-/// Simple SNES controller (joypad) shift-register model.
-///
-/// We expose just enough for Phase 2 bring-up:
-/// - $4016 write bit0: strobe (latch)
-/// - $4016 read: serial data for pad1 (bit0)
-/// - $4017 read: serial data for pad2 (bit0)
-///
-/// Button order (LSB-first) matches typical SNES docs:
-/// B, Y, Select, Start, Up, Down, Left, Right, A, X, L, R, 1, 1, 1, 1
 struct ControllerState: Sendable {
     var a = false
     var b = false
@@ -26,10 +17,8 @@ struct ControllerState: Sendable {
 
 extension ControllerState {
     fileprivate func toShiftWord() -> u16 {
-        // Active-low: 0 = pressed, 1 = released
         var w: u16 = 0xFFFF
 
-        // LSB-first: B, Y, Select, Start, Up, Down, Left, Right, A, X, L, R
         func setPressed(_ bit: Int, _ pressed: Bool) {
             if pressed { w &= ~(1 << bit) }
         }
@@ -47,13 +36,11 @@ extension ControllerState {
         setPressed(10, l)
         setPressed(11, r)
 
-        // Bits 12-15 are 1s
         w |= 0xF000
         return w
     }
 }
 
-/// Internal joypad serial I/O state.
 final class JoypadIO {
     var port1 = ControllerState()
     var port2 = ControllerState()

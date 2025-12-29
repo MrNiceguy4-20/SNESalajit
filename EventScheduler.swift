@@ -1,6 +1,5 @@
 import Foundation
 
-/// Deterministic single-thread event queue (Phase 2+).
 final class EventScheduler {
     struct Event {
         let cycle: Int

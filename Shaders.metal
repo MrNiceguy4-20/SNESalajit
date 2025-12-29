@@ -7,7 +7,6 @@ struct VSOut {
 };
 
 vertex VSOut vs_main(uint vid [[vertex_id]]) {
-    // Fullscreen triangle.
     float2 pos;
     float2 uv;
     if (vid == 0) { pos = float2(-1.0, -1.0); uv = float2(0.0, 1.0); }
@@ -23,7 +22,6 @@ vertex VSOut vs_main(uint vid [[vertex_id]]) {
 fragment float4 fs_main(VSOut in [[stage_in]],
                         texture2d<float> tex [[texture(0)]],
                         sampler samp [[sampler(0)]]) {
-    // Clamp UV to texture space for safety.
     float2 uv = clamp(in.uv, float2(0.0), float2(1.0));
     return tex.sample(samp, uv);
 }

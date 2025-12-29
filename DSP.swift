@@ -23,7 +23,6 @@ final class DSP {
     private var firHistR: [Int] = Array(repeating: 0, count: 8)
 
     private var endx: u8 = 0
-
     private var flg: u8 = 0
     private var echoWriteDisable: Bool = false
     private var mute: Bool = false
@@ -37,24 +36,18 @@ final class DSP {
     func reset() {
         regs = Array(repeating: 0, count: 0x80)
         voices.forEach { $0.keyOff() }
-
         mvolL = 127; mvolR = 127
         evolL = 0; evolR = 0
         efb = 0
-
         eon = 0; pmon = 0; non = 0; kon = 0
-
         esa = 0; edl = 0; echoPos = 0
         fir = Array(repeating: 0, count: 8)
         firHistL = Array(repeating: 0, count: 8)
         firHistR = Array(repeating: 0, count: 8)
-
         endx = 0
-
         flg = 0
         echoWriteDisable = false
         mute = false
-
         noiseLFSR = 0x4000
         noiseCounter = 0
         noisePeriod = 4
@@ -93,30 +86,23 @@ final class DSP {
         case 0x1C: mvolR = Int(Int8(bitPattern: value))
         case 0x2C: evolL = Int(Int8(bitPattern: value))
         case 0x3C: evolR = Int(Int8(bitPattern: value))
-
-        case 0x4C: // KON
+        case 0x4C:
             kon = value
             for i in 0..<8 where (value & (1 << i)) != 0 {
                 voices[i].keyOn(sampleAddr: voices[i].sampleAddr)
             }
-            if regs[0x4D] == 0 { eon = value } // back-compat
-
-        case 0x4D: // EON
+            if regs[0x4D] == 0 { eon = value }
+        case 0x4D:
             eon = value
-
-        case 0x5C: // KOF
+        case 0x5C:
             for i in 0..<8 where (value & (1 << i)) != 0 { voices[i].keyOff() }
-
         case 0x6D: esa = Int(value) << 8
         case 0x7D: edl = Int(value & 0x0F)
-
         case 0x0F...0x16:
             fir[r - 0x0F] = Int(Int8(bitPattern: value))
-
         case 0x2D: pmon = value
         case 0x3D: non = value
-
-        case 0x6C: // FLG
+        case 0x6C:
             flg = value
             echoWriteDisable = (value & 0x20) != 0
             mute = (value & 0x40) != 0
@@ -127,7 +113,6 @@ final class DSP {
             }
             let n = Int(value & 0x1F)
             noisePeriod = max(1, 1 << (min(10, n >> 1)))
-
         default:
             break
         }
@@ -145,14 +130,11 @@ final class DSP {
 
     func mix(readRAM: (Int)->u8, writeRAM: (Int, Int)->Void) -> (Int, Int) {
         let noise = nextNoiseSample()
-
         var newEndx: u8 = 0
-
         var dryL = 0
         var dryR = 0
         var echoInL = 0
         var echoInR = 0
-
         var currentOut = Array(repeating: 0, count: 8)
 
         for i in 0..<8 {
@@ -160,17 +142,13 @@ final class DSP {
             let pitchDelta = (i > 0 && (pmon & (1 << i)) != 0) ? (lastVoiceOut[i - 1] >> 4) : 0
             let s = voices[i].nextSample(read: readRAM, pitchDelta: pitchDelta, noiseSample: noise)
             currentOut[i] = s
-
             if voices[i].endHitThisSample {
                 newEndx |= (1 << i)
             }
-
             let vL = s * voices[i].volL
             let vR = s * voices[i].volR
-
             dryL += vL
             dryR += vR
-
             if (eon & (1 << i)) != 0 {
                 echoInL += vL
                 echoInR += vR
@@ -178,7 +156,6 @@ final class DSP {
         }
 
         lastVoiceOut = currentOut
-        
         dryL >>= 7; dryR >>= 7
         echoInL >>= 7; echoInR >>= 7
 
@@ -199,7 +176,6 @@ final class DSP {
         if !echoWriteDisable {
             let fbL = echoInL + ((wetL * efb) >> 7)
             let fbR = echoInR + ((wetR * efb) >> 7)
-
             writeRAM(echoAddr, fbL & 0xFF)
             writeRAM(echoAddr + 1, (fbL >> 8) & 0xFF)
             writeRAM(echoAddr + 2, fbR & 0xFF)
@@ -208,9 +184,7 @@ final class DSP {
 
         let echoBytes = max(4, edl * 0x800)
         echoPos = (echoPos + 4) % echoBytes
-
         endx |= newEndx
-
         if mute { return (0, 0) }
 
         let outL = ((dryL * mvolL) >> 7) + ((wetL * evolL) >> 7)

@@ -136,7 +136,6 @@ final class EmulatorViewModel: ObservableObject {
         self.framebuffer = fb
         frameCounter += 1
         logFrameProgress(at: hostTime)
-        
     }
     
     private func logFrameProgress(at hostTime: CFTimeInterval) {
@@ -171,7 +170,6 @@ final class EmulatorViewModel: ObservableObject {
         print(line)
     }
 }
-    
 
 private extension DateFormatter {
     static let cached: DateFormatter = {

@@ -1,8 +1,25 @@
 import Foundation
 
 final class MasterClock {
-    private(set) var masterCycles: Int = 0
+    static let masterHz: Double = 21_477_272.0
+    static let masterCyclesPerCPUCycle: Int = 6
 
-    func reset() { masterCycles = 0 }
-    func advance(masterCycles: Int) { self.masterCycles &+= masterCycles }
+    private(set) var masterCycles: Int = 0
+    private var cpuMasterRemainder: Int = 0
+
+    func reset() {
+        masterCycles = 0
+        cpuMasterRemainder = 0
+    }
+
+    func advance(masterCycles: Int) {
+        self.masterCycles &+= masterCycles
+    }
+
+    func cpuCycles(forMasterCycles masterCycles: Int) -> Int {
+        cpuMasterRemainder += masterCycles
+        let cpuCycles = cpuMasterRemainder / Self.masterCyclesPerCPUCycle
+        cpuMasterRemainder = cpuMasterRemainder % Self.masterCyclesPerCPUCycle
+        return cpuCycles
+    }
 }

@@ -1,34 +1,22 @@
 import Foundation
 
-/// Owns NMI/IRQ state and the CPU-visible flags (RDNMI/TIMEUP), plus a small rolling trace log.
 final class InterruptController {
-    // $4200 NMITIMEN bits
     private(set) var nmiEnable: Bool = false
     private(set) var hIrqEnable: Bool = false
     private(set) var vIrqEnable: Bool = false
     private(set) var autoJoypadEnable: Bool = false
-
     private(set) var nmitimen: u8 = 0
 
-    // $4207-420A
-    var hTime: Int = 0       // 9-bit (0..511)
-    var vTime: Int = 0       // 9-bit (0..511)
+    var hTime: Int = 0
+    var vTime: Int = 0
 
-    // CPU-visible flags
-    // $4210: bit7 = NMI occurred. Set at the start of VBlank even if NMI is disabled in $4200.
-    // bits0-3 contain a CPU version nibble (commonly reads as 0x2).
     private(set) var rdnmi: u8 = 0x02
-    // $4211: bit7 = IRQ occurred.
     private(set) var timeup: u8 = 0x00
 
-    // Lines to CPU
     private(set) var nmiLine: Bool = false
     private(set) var irqLine: Bool = false
 
-    // Edge tracking
     private var nmiLatchedThisVBlank: Bool = false
-
-    // Rolling trace
     private var recentEvents: [String] = []
     private let maxRecentEvents: Int = 200
 
@@ -37,28 +25,20 @@ final class InterruptController {
         hIrqEnable = false
         vIrqEnable = false
         autoJoypadEnable = false
-
         hTime = 0
         vTime = 0
-
-        // Preserve the version nibble on reset.
         rdnmi = 0x02
         timeup = 0x00
-
         nmiLine = false
         irqLine = false
         nmiLatchedThisVBlank = false
-
         recentEvents.removeAll(keepingCapacity: true)
         pushEvent("[SL:0 DOT:0] [reset] NMI/HV/AutoJoy cleared")
     }
 
-    // MARK: - Timing hooks (called by Bus/VideoTiming)
-
     func onEnterVBlank(dot: Int, scanline: Int) {
         rdnmi |= 0x80
         pushEvent(dot: dot, scanline: scanline, "VBlank enter → RDNMI bit7 set (RDNMI=\(hex8(rdnmi)))")
-
         if nmiEnable {
             nmiLine = true
             nmiLatchedThisVBlank = true
@@ -76,7 +56,6 @@ final class InterruptController {
 
     func pollHVMatch(dot: Int, scanline: Int) {
         let match: Bool
-
         if hIrqEnable && vIrqEnable {
             match = (scanline == vTime) && (dot == hTime)
         } else if vIrqEnable {
@@ -96,16 +75,12 @@ final class InterruptController {
         }
     }
 
-    // MARK: - $4200 NMITIMEN
-
-    /// Write handler for $4200 NMITIMEN.
-    /// If NMI is enabled while already in VBlank, the NMI flag/line must assert immediately.
     func setNMITIMEN(_ value: u8, video: VideoTiming, dot: Int, scanline: Int) {
         nmitimen = value
         let newNMIEnable = (value & 0x80) != 0
-            let newVIRQEnable = (value & 0x20) != 0
-            let newHIRQEnable = (value & 0x10) != 0
-            let newAutoJoyEnable = (value & 0x01) != 0
+        let newVIRQEnable = (value & 0x20) != 0
+        let newHIRQEnable = (value & 0x10) != 0
+        let newAutoJoyEnable = (value & 0x01) != 0
 
         if newNMIEnable != nmiEnable {
             pushEvent(dot: dot, scanline: scanline, "NMI EN \(newNMIEnable ? 1 : 0)  (write $4200=\(hex8(value)))")
@@ -120,8 +95,6 @@ final class InterruptController {
             pushEvent(dot: dot, scanline: scanline, "AutoJoy EN \(newAutoJoyEnable ? 1 : 0)  (write $4200=\(hex8(value)))")
         }
 
-        // If enabling NMI while we're already in VBlank and the VBlank edge has already happened,
-        // hardware asserts NMI immediately.
         if newNMIEnable && !nmiEnable && video.inVBlank {
             rdnmi |= 0x80
             nmiLine = true
@@ -130,9 +103,9 @@ final class InterruptController {
         }
 
         nmiEnable = newNMIEnable
-            vIrqEnable = newVIRQEnable
-            hIrqEnable = newHIRQEnable
-            autoJoypadEnable = newAutoJoyEnable
+        vIrqEnable = newVIRQEnable
+        hIrqEnable = newHIRQEnable
+        autoJoypadEnable = newAutoJoyEnable
     }
 
     func reapplyLatchedNMITIMEN(dot: Int, scanline: Int) {
@@ -149,8 +122,6 @@ final class InterruptController {
         }
         irqLine = false
     }
-
-    // MARK: - MMIO reads
 
     func readRDNMI(dot: Int, scanline: Int) -> u8 {
         let v = rdnmi
@@ -180,23 +151,17 @@ final class InterruptController {
         pushEvent(dot: dot, scanline: scanline, "HVBJOY read → \(hex8(value))")
     }
 
-    // MARK: - Debug
-
     struct InterruptDebugState {
         let nmiEnable: Bool
         let hIrqEnable: Bool
         let vIrqEnable: Bool
         let autoJoypadEnable: Bool
-
         let hTime: Int
         let vTime: Int
-
         let rdnmi: u8
         let timeup: u8
-
         let nmiLine: Bool
         let irqLine: Bool
-
         let recentEvents: [String]
     }
 
@@ -215,8 +180,6 @@ final class InterruptController {
             recentEvents: recentEvents
         )
     }
-
-    // MARK: - Trace helpers
 
     private func pushEvent(dot: Int, scanline: Int, _ message: String) {
         pushEvent("[SL:\(scanline) DOT:\(dot)] \(message)")

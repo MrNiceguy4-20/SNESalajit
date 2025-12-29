@@ -12,8 +12,6 @@ final class PPUMemory {
         writeCGRAM16(colorIndex: 0, value: 0x0000)
     }
 
-    // MARK: - VRAM
-
     @inline(__always)
     func readVRAMByte(_ byteAddress: Int) -> u8 {
         vram[byteAddress & 0xFFFF]
@@ -41,23 +39,26 @@ final class PPUMemory {
         vram[byteIndex] = value
     }
 
-    // MARK: - CGRAM
-
     func readCGRAM16(colorIndex: Int) -> u16 {
-        let i = (colorIndex & 0xFF) * 2
-        let lo = cgram[i]
-        let hi = cgram[i + 1]
+        let idx = (colorIndex & 0xFF) * 2
+        let lo = cgram[idx]
+        let hi = cgram[idx + 1]
         return u16(lo) | (u16(hi) << 8)
     }
 
     func writeCGRAM16(colorIndex: Int, value: u16) {
-        let i = (colorIndex & 0xFF) * 2
-        cgram[i] = u8(truncatingIfNeeded: value)
-        cgram[i + 1] = u8(truncatingIfNeeded: value >> 8)
+        let idx = (colorIndex & 0xFF) * 2
+        cgram[idx] = u8(value & 0xFF)
+        cgram[idx + 1] = u8((value >> 8) & 0x7F)
     }
 
-    // MARK: - OAM
+    func readOAM(_ addr: Int) -> u8 {
+        if addr < 0 || addr >= 544 { return 0 }
+        return oam[addr]
+    }
 
-    func readOAM(_ index: Int) -> u8 { oam[index % oam.count] }
-    func writeOAM(_ index: Int, value: u8) { oam[index % oam.count] = value }
+    func writeOAM(_ addr: Int, _ value: u8) {
+        if addr < 0 || addr >= 544 { return }
+        oam[addr] = value
+    }
 }

@@ -1,7 +1,6 @@
 import Foundation
 import Darwin
 
-/// Allocates RWX memory for Intel macOS x86_64 JIT (Phase 5).
 final class JITExecutableMemory {
     private(set) var ptr: UnsafeMutableRawPointer?
     private(set) var capacity: Int = 0
