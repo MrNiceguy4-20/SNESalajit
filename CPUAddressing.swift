@@ -92,13 +92,24 @@ enum CPUAddressing {
         return (addr, bank)
     }
         @inline(__always)
-        static func dpIndirectLongY(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
-            _ = bus
-            let base = dpIndirectLong(cpu: cpu, bus: bus)
-            let y = cpu.xIs8() ? u16(u8(truncatingIfNeeded: cpu.r.y)) : cpu.r.y
-            // 65C816: add Y to 16-bit address only; carry does not affect bank.
-            return (base.addr &+ y, base.bank)
-        }
+    static func dpIndirectLongY(cpu: CPU65816, bus: Bus) -> (addr: u16, bank: u8) {
+        _ = bus
+
+        let off = u16(cpu.fetch8())
+        let ptr = cpu.r.dp &+ off
+
+        // Pointer fetch is a linear 16-bit increment in bank $00 (no zero-page-style wrap).
+        let lo = cpu.read8(0x00, ptr)
+        let hi = cpu.read8(0x00, ptr &+ 1)
+        let ba = cpu.read8(0x00, ptr &+ 2)
+
+        let y = cpu.xIs8() ? u32(u8(truncatingIfNeeded: cpu.r.y)) : u32(cpu.r.y)
+
+        let base24 = (u32(ba) << 16) | (u32(hi) << 8) | u32(lo)
+        let final24 = (base24 &+ y) & 0x00FF_FFFF
+
+        return (u16(final24 & 0xFFFF), u8((final24 >> 16) & 0xFF))
+    }
         
 
 

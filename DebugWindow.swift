@@ -87,6 +87,13 @@ GroupBox("APU / SPC700") {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                GroupBox("PPU Trace") {
+                    Text(ppuTraceText)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 6)
@@ -207,6 +214,13 @@ private var apuHandshakeText: String {
             "Framebuffer \(p.framebufferWidth)x\(p.framebufferHeight)"
         ].joined(separator: "\n")
     }
+
+    private var ppuTraceText: String {
+        let e = snapshot.ppu.recentTrace
+        if e.isEmpty { return "<no events yet>" }
+        return e.suffix(120).joined(separator: "\n")
+    }
+
 }
 
 private struct LogsTab: View {

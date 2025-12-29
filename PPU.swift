@@ -2,6 +2,12 @@ import Foundation
 
 /// PPU (Phase 3: basic registers + VRAM/CGRAM/OAM + simple BG rendering at vblank).
 final class PPU {
+    init() {
+        regs.traceHook = { [weak self] line in
+            self?.pushTrace(line)
+        }
+    }
+
     private weak var bus: Bus?
     private var video = VideoTiming()
     private(set) var framebuffer = Framebuffer(width: 256, height: 224)
@@ -12,13 +18,44 @@ final class PPU {
 
     var inVBlank: Bool = false
 
+    // MARK: - Debug trace
+    private var traceRing: [String] = Array(repeating: "", count: 128)
+    private var traceHead: Int = 0
+    private var traceCount: Int = 0
+
+    private func pushTrace(_ s: String) {
+        traceRing[traceHead] = s
+        traceHead = (traceHead + 1) & (traceRing.count - 1)
+        traceCount = min(traceCount + 1, traceRing.count)
+    }
+
+    private func recentTrace() -> [String] {
+        guard traceCount > 0 else { return [] }
+        var out: [String] = []
+        out.reserveCapacity(traceCount)
+        let start = (traceHead - traceCount + traceRing.count) % traceRing.count
+        for i in 0..<traceCount {
+            out.append(traceRing[(start + i) % traceRing.count])
+        }
+        return out
+    }
+
+
     func attach(bus: Bus) { self.bus = bus }
 
     func reset() {
+        // Cold/reset power-on state should also reset video timing so VBlank edges are deterministic.
+        video = VideoTiming()
+
         inVBlank = false
         framebuffer = Framebuffer(width: 256, height: 224, fill: 0x000000FF)
         regs.reset()
         mem.reset()
+
+        // Clear debug trace ring on reset so snapshots reflect the new run.
+        traceRing = Array(repeating: "", count: 128)
+        traceHead = 0
+        traceCount = 0
     }
 
     func step(masterCycles: Int) {
@@ -43,6 +80,7 @@ final class PPU {
     }
 
     func onEnterVBlank() {
+        inVBlank = true
         let fb = renderer.renderFrame(regs: regs, mem: mem)
         bus?.ppuOwner?.submitFrame(fb)
     }
@@ -76,6 +114,7 @@ final class PPU {
 
         let framebufferWidth: Int
         let framebufferHeight: Int
+        let recentTrace: [String]
     }
 
     func debugSnapshot() -> PPUDebugState {
@@ -89,7 +128,8 @@ final class PPU {
             vramAddr: regs.vramAddr,
             cgramAddr: regs.cgramAddr,
             framebufferWidth: framebuffer.width,
-            framebufferHeight: framebuffer.height
+            framebufferHeight: framebuffer.height,
+            recentTrace: recentTrace()
         )
     }
 }

@@ -26,24 +26,28 @@ struct ControllerState: Sendable {
 
 extension ControllerState {
     fileprivate func toShiftWord() -> u16 {
-        var w: u16 = 0
-        // LSB-first order
-        func set(_ bit: Int, _ on: Bool) {
-            if on { w |= (1 << bit) }
+        // Active-low: 0 = pressed, 1 = released
+        var w: u16 = 0xFFFF
+
+        // LSB-first: B, Y, Select, Start, Up, Down, Left, Right, A, X, L, R
+        func setPressed(_ bit: Int, _ pressed: Bool) {
+            if pressed { w &= ~(1 << bit) }
         }
-        set(0, b)
-        set(1, y)
-        set(2, select)
-        set(3, start)
-        set(4, up)
-        set(5, down)
-        set(6, left)
-        set(7, right)
-        set(8, a)
-        set(9, x)
-        set(10, l)
-        set(11, r)
-        // Bits 12-15 are typically 1s.
+
+        setPressed(0, b)
+        setPressed(1, y)
+        setPressed(2, select)
+        setPressed(3, start)
+        setPressed(4, up)
+        setPressed(5, down)
+        setPressed(6, left)
+        setPressed(7, right)
+        setPressed(8, a)
+        setPressed(9, x)
+        setPressed(10, l)
+        setPressed(11, r)
+
+        // Bits 12-15 are 1s
         w |= 0xF000
         return w
     }
@@ -51,14 +55,10 @@ extension ControllerState {
 
 /// Internal joypad serial I/O state.
 final class JoypadIO {
-    // Public controller state (can be wired to UI later).
     var port1 = ControllerState()
     var port2 = ControllerState()
 
-    // $4016 strobe bit (when high, continuously latch).
     private var strobeHigh: Bool = false
-
-    // Shift registers (LSB is next output).
     private var shift1: u16 = 0xFFFF
     private var shift2: u16 = 0xFFFF
 
@@ -68,53 +68,33 @@ final class JoypadIO {
         shift2 = 0xFFFF
     }
 
-    /// Latch current controller state into shift registers.
     func latch() {
         shift1 = port1.toShiftWord()
         shift2 = port2.toShiftWord()
     }
 
-    /// Write to $4016 (strobe).
     func writeStrobe(_ value: u8) {
         let newHigh = (value & 0x01) != 0
-        // Latch on rising edge, and also keep latched while high.
-        if newHigh && !strobeHigh {
-            latch()
-        }
+        if newHigh && !strobeHigh { latch() }
         strobeHigh = newHigh
-        if strobeHigh {
-            latch()
-        }
+        if strobeHigh { latch() }
     }
 
-    /// Read $4016 (pad 1). Returns bit0 only; other bits are 0.
     func read4016() -> u8 {
-        if strobeHigh {
-            latch()
-        }
+        if strobeHigh { latch() }
         let bit = u8(shift1 & 0x0001)
-        if !strobeHigh {
-            shift1 = (shift1 >> 1) | 0x8000
-        }
+        if !strobeHigh { shift1 = (shift1 >> 1) | 0x8000 }
         return bit
     }
 
-    /// Read $4017 (pad 2). Returns bit0 only; other bits are 0.
     func read4017() -> u8 {
-        if strobeHigh {
-            latch()
-        }
+        if strobeHigh { latch() }
         let bit = u8(shift2 & 0x0001)
-        if !strobeHigh {
-            shift2 = (shift2 >> 1) | 0x8000
-        }
+        if !strobeHigh { shift2 = (shift2 >> 1) | 0x8000 }
         return bit
     }
 
-    /// Returns the current latched 16-bit words for both ports (LSB-first button order).
-    /// This does not advance the shift registers.
     func latchedWords() -> (u16, u16) {
         (shift1, shift2)
     }
-
 }

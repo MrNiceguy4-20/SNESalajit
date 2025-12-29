@@ -50,7 +50,7 @@ final class Cartridge {
 
     func romOffset(bank: u8, addr: u16) -> Int? {
         let b = Int(bank & 0x7F)
-        if b == 0x7E || b == 0x7F || b > 0x7D { return nil }
+        if b == 0x7E || b == 0x7F { return nil }
 
         switch mapping {
         case .loROM:

@@ -69,6 +69,10 @@ final class DebugViewModel: ObservableObject {
 
         out.append("==== PPU ====")
         out.append(ppuText)
+        out.append("")
+
+        out.append("==== PPU TRACE ====")
+        out.append(ppuTraceText)
 
         return out.joined(separator: "\n")
     }
@@ -110,6 +114,7 @@ dot \(b.dot)   scanline \(b.scanline)   vblank \(b.inVBlank ? 1 : 0)   autoJoyBu
 NMI EN \(i.nmiEnable ? 1 : 0)  H-IRQ EN \(i.hIrqEnable ? 1 : 0)  V-IRQ EN \(i.vIrqEnable ? 1 : 0)  AutoJoy EN \(i.autoJoypadEnable ? 1 : 0)
 HTIME \(i.hTime)  VTIME \(i.vTime)  NMI line \(i.nmiLine ? 1 : 0)  IRQ line \(i.irqLine ? 1 : 0)
 RDNMI \(Hex.u8(i.rdnmi))  TIMEUP \(Hex.u8(i.timeup))
+Reads: HVBJOY \(b.hvbjoyReadCount) last \(Hex.u8(b.lastHVBJOY))   RDNMI \(b.rdnmiReadCount) last \(Hex.u8(b.lastRDNMI))   TIMEUP \(b.timeupReadCount) last \(Hex.u8(b.lastTIMEUP))   NMITIMEN \(b.nmitimenWriteCount) last \(Hex.u8(b.lastNMITIMEN))
 MDMAEN \(Hex.u8(b.mdmaEnabled))  HDMAEN \(Hex.u8(b.hdmaEnabled))  DMA stall \(b.dmaStallCycles)
 AutoJoy1 \(Hex.u16(b.autoJoy1))  AutoJoy2 \(Hex.u16(b.autoJoy2))
 """
@@ -135,6 +140,16 @@ AutoJoy1 \(Hex.u16(b.autoJoy1))  AutoJoy2 \(Hex.u16(b.autoJoy2))
         out.append("")
         out.append(ports("APU→CPU latched", a.apuToCpu))
         out.append(ports("APU→CPU lastWr", a.lastApuToCpuWrite))
+        out.append("")
+        if a.recentPortEvents.isEmpty {
+            out.append("Recent: <none>")
+        } else {
+            out.append("Recent:")
+            for e in a.recentPortEvents.suffix(16) {
+                let dir = (e.direction == .cpuToApu) ? "CPU→APU" : "APU→CPU"
+                out.append("  \(dir)[\(e.port)] = \(Hex.u8(e.value))")
+            }
+        }
         return out.joined(separator: "\n")
     }
 
@@ -159,6 +174,11 @@ TM \(Hex.u8(p.tmMain))  TS \(Hex.u8(p.tsSub))
 VRAM Addr \(Hex.u16(p.vramAddr))  CGRAM Addr \(Hex.u8(p.cgramAddr))
 Framebuffer \(p.framebufferWidth)x\(p.framebufferHeight)
 """
+    }
+
+    var ppuTraceText: String {
+        let e = snapshot.ppu.recentTrace
+        return e.isEmpty ? "<no events>" : e.suffix(120).joined(separator: "\n")
     }
 
     // MARK: - Timer

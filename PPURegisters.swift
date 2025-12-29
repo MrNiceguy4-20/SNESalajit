@@ -1,6 +1,18 @@
 import Foundation
 
 final class PPURegisters {
+    // Optional debug trace sink set by PPU.
+    var traceHook: ((String) -> Void)? = nil
+    var rdnmi: UInt8 = 0
+    @inline(__always)
+    private func hex8(_ v: u8) -> String { String(format: "$%02X", Int(v)) }
+    @inline(__always)
+    private func hex16(_ v: u16) -> String { String(format: "$%04X", Int(v)) }
+    @inline(__always)
+    private func trace(_ video: VideoTiming, _ s: String) {
+        traceHook?("[SL:\(video.scanline) DOT:\(video.dot)] \(s)")
+    }
+
     // MARK: - Display / mode
     private(set) var forcedBlank: Bool = true
     private(set) var brightness: u8 = 0
@@ -141,16 +153,19 @@ final class PPURegisters {
     // MARK: - Read
 
     func read(addr: u16, mem: PPUMemory, openBus: u8, video: VideoTiming) -> u8 {
+        trace(video, "R \(hex16(addr))")
         switch addr {
         case 0x2137:
             // SLHV is write-only on real HW; reads typically return open bus.
             return openBus
 
         case 0x2139:
+            trace(video, "VMDATAL read @VRAM[\(hex16(vramAddr))]")
             // VMDATAL (low)
             return u8(truncatingIfNeeded: vramReadBuffer)
 
         case 0x213A:
+            trace(video, "VMDATAH read @VRAM[\(hex16(vramAddr))]")
             // VMDATAH (high)
             let v = u8(truncatingIfNeeded: vramReadBuffer >> 8)
             advanceVRAMAddress()
@@ -158,6 +173,7 @@ final class PPURegisters {
             return v
 
         case 0x213B:
+            trace(video, "CGDATA read @CGRAM[\(hex8(cgramAddr))]")
             // CGDATA
             if (openBus & 1) == 0 {
                 cgramReadLatch = mem.readCGRAM16(colorIndex: Int(cgramAddr))
@@ -190,6 +206,7 @@ final class PPURegisters {
     // MARK: - Write
 
     func write(addr: u16, value: u8, mem: PPUMemory, openBus: inout u8, video: VideoTiming) {
+        trace(video, "W \(hex16(addr)) = \(hex8(value))")
         switch addr {
         case 0x2100:
             forcedBlank = (value & 0x80) != 0
@@ -280,10 +297,12 @@ final class PPURegisters {
             vramReadBuffer = mem.readVRAM16(wordAddress: mapVRAMWordAddress(vramAddr))
 
         case 0x2118:
+            trace(video, "VMDATAL write = \(hex8(value)) @VRAM[\(hex16(vramAddr))]")
             mem.writeVRAMLow(wordAddress: mapVRAMWordAddress(vramAddr), value: value)
             if (vmain & 0x80) == 0 { advanceVRAMAddress() }
 
         case 0x2119:
+            trace(video, "VMDATAH write = \(hex8(value)) @VRAM[\(hex16(vramAddr))]")
             mem.writeVRAMHigh(wordAddress: mapVRAMWordAddress(vramAddr), value: value)
             if (vmain & 0x80) != 0 { advanceVRAMAddress() }
 
@@ -292,6 +311,7 @@ final class PPURegisters {
             cgramWriteLatch = nil
 
         case 0x2122:
+            trace(video, "CGDATA write = \(hex8(value)) @CGRAM[\(hex8(cgramAddr))]")
             if let lo = cgramWriteLatch {
                 let word = u16(lo) | (u16(value) << 8)
                 mem.writeCGRAM16(colorIndex: Int(cgramAddr), value: word)

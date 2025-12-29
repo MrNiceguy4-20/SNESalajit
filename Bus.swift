@@ -11,7 +11,7 @@ final class Bus {
     private var wramPortAddr: Int = 0
     var video = VideoTiming()
     private var dotCycleAcc: Int = 0
-    private let irq = InterruptController()
+    let irq = InterruptController()
     private let dma = DMAEngine()
     private let joypads = JoypadIO()
     private var autoJoy1: u16 = 0xFFFF
@@ -20,6 +20,7 @@ final class Bus {
     private var mdmaen: u8 = 0
     private var hdmaen: u8 = 0
     private var openBus: u8 = 0x00
+    private var dmaActive: Bool = false
     private var dmaStallMasterCycles: Int = 0
     private var hvbjoyReadCount: Int = 0
     private var lastHVBJOY: u8 = 0x00
@@ -27,6 +28,8 @@ final class Bus {
     private var timeupReadCount: Int = 0
     private var nmitimenWriteCount: Int = 0
     private var lastNMITIMEN: u8 = 0x00
+    private var lastRDNMI: u8 = 0x00
+    private var lastTIMEUP: u8 = 0x00
 
     struct BusDebugState {
         let scanline: Int
@@ -52,6 +55,8 @@ final class Bus {
         let timeupReadCount: Int
         let nmitimenWriteCount: Int
         let lastNMITIMEN: u8
+        let lastRDNMI: u8
+        let lastTIMEUP: u8
         let irq: InterruptController.InterruptDebugState
     }
 
@@ -80,6 +85,8 @@ final class Bus {
             timeupReadCount: timeupReadCount,
             nmitimenWriteCount: nmitimenWriteCount,
             lastNMITIMEN: lastNMITIMEN,
+            lastRDNMI: lastRDNMI,
+            lastTIMEUP: lastTIMEUP,
             irq: irq.debugSnapshot()
         )
     }
@@ -137,7 +144,7 @@ final class Bus {
 
     private func romOffsetForMapping(_ mapping: Cartridge.Mapping, bank: u8, addr: u16) -> Int? {
         let b = Int(bank & 0x7F)
-        if b == 0x7E || b == 0x7F || b > 0x7D { return nil }
+        if b == 0x7E || b == 0x7F { return nil }
         switch mapping {
         case .loROM:
             if addr >= 0x8000 { return (b * 0x8000) + Int(addr - 0x8000) }
@@ -189,10 +196,6 @@ final class Bus {
         irq.reapplyLatchedNMITIMEN(dot: video.dot, scanline: video.scanline)
         irq.pollHVMatch(dot: video.dot, scanline: video.scanline)
         video.stepDot()
-        if autoJoypadStartDelayDots > 0 {
-            autoJoypadStartDelayDots -= 1
-            if autoJoypadStartDelayDots == 0 { beginAutoJoypad() }
-        }
         if video.dot == 0 {
             if hdmaen != 0, video.isVisibleScanline { dma.hdmaStep(mask: hdmaen, bus: self) }
         }
@@ -206,10 +209,49 @@ final class Bus {
             irq.onLeaveVBlank(dot: video.dot, scanline: video.scanline)
             ppu?.onLeaveVBlank()
         }
+        // AutoJoypad delayed start (scheduled on VBlank entry).
+        if autoJoypadStartDelayDots > 0 {
+            autoJoypadStartDelayDots -= 1
+            if autoJoypadStartDelayDots == 0 { beginAutoJoypad() }
+        }
     }
 
+
+
+    // Physical bus read (used by DMA): bypass CPU quirks, use true cartridge mapping
+    func read8_physical(bank: u8, addr: u16) -> u8 {
+        if bank == 0x7E || bank == 0x7F {
+            return wram.read8(offset: (Int(bank - 0x7E) << 16) | Int(addr))
+        }
+        if isIOBank(bank), addr < 0x2000 {
+            return wram.read8(offset: Int(addr))
+        }
+        if isIOBank(bank), (MMIO.isMMIO(addr) || addr == 0x4016 || addr == 0x4017) {
+            return read8_mmio(addr)
+        }
+        if let c = cartridge {
+            let mapping = vectorMappingOverride ?? c.mapping
+            if let v = readCartridgeByte(c, mapping: mapping, bank: bank, addr: addr) {
+                return v
+            }
+        }
+        return openBus
+    }
+
+    /// DMA read path: use the normal bus mapping but bypass the CPU WAI/open-bus short-circuit.
+    /// On real hardware, DMA continues to read from the bus even if the CPU is in WAI.
+    func read8_dma(bank: u8, addr: u16) -> u8 {
+        dmaActive = true
+        let v = read8(bank: bank, addr: addr)
+        dmaActive = false
+        return v
+    }
+
+
     func read8(bank: u8, addr: u16) -> u8 {
-        if let cpu = cpu, cpu.isWaiting && !cpu.nmiPending && !cpu.irqLine { return openBus }
+        if !dmaActive {
+            if let cpu = cpu, cpu.isWaiting && !cpu.nmiPending && !cpu.irqLine { return openBus }
+        }
 
         // WRAM main mapping
         if bank == 0x7E || bank == 0x7F {
@@ -234,12 +276,20 @@ final class Bus {
             return v
         }
         if let c = cartridge {
+            // For CPU reads, use the same physical cartridge mapping path as DMA/physical reads.
+            // This avoids any per-Cartridge bank-gating bugs and ensures $C0-$FF banks work.
             if let ov = vectorMappingOverride, isIOBank(bank), addr >= 0xFF00 {
                 if let v = readCartridgeByte(c, mapping: ov, bank: bank, addr: addr) {
                     openBus = v
                     return v
                 }
             }
+            let mapping = vectorMappingOverride ?? c.mapping
+            if let v = readCartridgeByte(c, mapping: mapping, bank: bank, addr: addr) {
+                openBus = v
+                return v
+            }
+            // Fall back to cartridge handler (e.g. SRAM / special mappers) if ROM read did not match.
             let v = c.read8(bank: bank, addr: addr)
             openBus = v
             return v
@@ -277,8 +327,16 @@ final class Bus {
     private func isIOBank(_ bank: u8) -> Bool { (bank & 0x7F) <= 0x3F }
 
     func read8_mmio(_ addr: u16) -> u8 {
-        if addr == 0x4016 { return (openBus & 0xFE) | joypads.read4016() }
-        if addr == 0x4017 { return (openBus & 0xFE) | joypads.read4017() }
+        if addr == 0x4016 {
+            let v = (openBus & 0xFE) | joypads.read4016()
+            Log.debug(String(format: "IO $4016 = %02X", Int(v)))
+            return v
+        }
+        if addr == 0x4017 {
+            let v = (openBus & 0xFE) | joypads.read4017()
+            Log.debug(String(format: "IO $4017 = %02X", Int(v)))
+            return v
+        }
         if addr == 0x2180 {
             let v = wram.read8(offset: wramPortAddr)
             wramPortAddr = (wramPortAddr + 1) & 0x1FFFF
@@ -334,6 +392,9 @@ final class Bus {
     }
 
     private func beginAutoJoypad() {
+        // SNES AutoJoypad: hardware latches controllers and shifts 16 bits per port during VBlank.
+        // We model this by latching immediately and exposing the latched 16-bit words in $4218-$421B,
+        // while keeping the busy flag set for the hardware duration (~4224 master cycles ≈ 1056 dots).
         joypads.latch()
         let (w1, w2) = joypads.latchedWords()
         autoJoy1 = w1
@@ -345,10 +406,14 @@ final class Bus {
         switch addr {
         case 0x4210:
             rdnmiReadCount &+= 1
-            return irq.readRDNMI(dot: video.dot, scanline: video.scanline)
+            let v = irq.readRDNMI(dot: video.dot, scanline: video.scanline)
+            lastRDNMI = v
+            return v
         case 0x4211:
             timeupReadCount &+= 1
-            return irq.readTIMEUP(dot: video.dot, scanline: video.scanline)
+            let v = irq.readTIMEUP(dot: video.dot, scanline: video.scanline)
+            lastTIMEUP = v
+            return v
         case 0x4212:
             var v = openBus & 0x3E
             if video.inVBlank { v |= 0x80 }
@@ -377,8 +442,12 @@ final class Bus {
         case 0x4209: irq.vTime = (irq.vTime & 0x100) | Int(value)
         case 0x420A: irq.vTime = (irq.vTime & 0x0FF) | ((Int(value) & 1) << 8)
         case 0x420B:
+            // MDMAEN is a write-only latch: writing a bitmask triggers DMA immediately.
+            mdmaen = value
             let stall = dma.start(mask: value, bus: self)
             _ = consumeDMAStall(masterCycles: stall)
+            // Hardware clears the latch after the transfer.
+            mdmaen = 0
             return
         case 0x420C: hdmaen = value
             return

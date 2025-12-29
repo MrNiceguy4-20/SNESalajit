@@ -55,7 +55,17 @@ struct DMAChannel {
     var decrement: Bool { (dmap & 0x10) != 0 }
     var directionBtoA: Bool { (dmap & 0x80) != 0 }
 
-    var aBusAddress24: Int {
-        (Int(a1b) << 16) | Int(a1t)
+    var aBusAddress24: u32 {
+        (u32(a1b) << 16) | u32(a1t)
     }
+
+    mutating func advanceABus() {
+        if fixed { return }
+        let delta: Int32 = decrement ? -1 : 1
+        var full = Int32((Int32(a1b) << 16) | Int32(a1t))
+        full = (full + delta) & 0x00FF_FFFF
+        a1t = u16(full & 0xFFFF)
+        a1b = u8((full >> 16) & 0xFF)
+    }
+
 }

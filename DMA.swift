@@ -121,12 +121,9 @@ final class DMAEngine {
         var ch = channels[idx]
 
         let mode = ch.transferMode
-        let bAddr = u16(0x2100) | u16(ch.bbad) // Common PPU B-bus window.
         let dirBtoA = ch.directionBtoA
-        let fixed = ch.fixed
-        let dec = ch.decrement
 
-        var a = ch.aBusAddress24
+        // Use channel A1T/A1B directly (24-bit advance via advanceABus)
         var remaining = Int(ch.das)
         if remaining == 0 { remaining = 0x10000 } // hardware: 0 means 65536
 
@@ -138,33 +135,33 @@ final class DMAEngine {
             for off in offsets {
                 if remaining == 0 { break }
 
-                let b = u16(UInt16(bAddr &+ u16(off)))
+                let bOffset = (u16(ch.bbad) &+ u16(off)) & 0x00FF
+                let b = u16(0x2100) &+ bOffset
                 if dirBtoA {
                     // B -> A
                     let v = bus.read8_mmio(b)
-                    let bank = u8((a >> 16) & 0xFF)
-                    let addr = u16(a & 0xFFFF)
+                    let bank = ch.a1b
+                    let addr = ch.a1t
                     bus.write8(bank: bank, addr: addr, value: v)
                 } else {
                     // A -> B
-                    let bank = u8((a >> 16) & 0xFF)
-                    let addr = u16(a & 0xFFFF)
-                    let v = bus.read8(bank: bank, addr: addr)
+                    let bank = ch.a1b
+                    let addr = ch.a1t
+                    let v = bus.read8_dma(bank: bank, addr: addr)
+                    if v != 0 {
+                        Log.debug("DMA write non-zero: $\(Hex.u8(v)) from $\(Hex.u8(bank)):\(Hex.u16(addr))")
+                    }
+
                     bus.write8_mmio(b, value: v)
                 }
 
                 transferred += 1
-
-                if !fixed {
-                    if dec { a = (a &- 1) & 0xFFFFFF } else { a = (a &+ 1) & 0xFFFFFF }
-                }
+                ch.advanceABus()
                 remaining -= 1
             }
         }
 
         // Store back updated address/size (hardware updates A1T/A1B and sets DAS to 0).
-        ch.a1t = u16(a & 0xFFFF)
-        ch.a1b = u8((a >> 16) & 0xFF)
         ch.das = 0
         channels[idx] = ch
 
@@ -214,7 +211,7 @@ final class DMAEngine {
 
             if c.hdmaLineCounter == 0 {
                 // Fetch new line descriptor.
-                let desc = bus.read8(bank: c.hdmaBank, addr: c.hdmaTableAddr)
+                let desc = bus.read8_dma(bank: c.hdmaBank, addr: c.hdmaTableAddr)
                 c.hdmaTableAddr &+= 1
 
                 if desc == 0 {
@@ -233,13 +230,13 @@ final class DMAEngine {
 
             if c.hdmaDoTransfer && c.hdmaLineCounter > 0 {
                 let mode = c.transferMode
-                let bBase = u16(0x2100) | u16(c.bbad)
                 let offsets = DMAEngine.transferOffsets(for: mode)
 
                 for off in offsets {
-                    let data = bus.read8(bank: c.hdmaBank, addr: c.hdmaTableAddr)
+                    let data = bus.read8_dma(bank: c.hdmaBank, addr: c.hdmaTableAddr)
                     c.hdmaTableAddr &+= 1
-                    let b = u16(UInt16(bBase &+ u16(off)))
+                    let bOffset = (u16(c.bbad) &+ u16(off)) & 0x00FF
+                    let b = u16(0x2100) &+ bOffset
                     bus.write8_mmio(b, value: data)
                 }
             }
@@ -252,7 +249,8 @@ final class DMAEngine {
         }
     }
 
-private static func transferOffsets(for mode: Int) -> [Int] {
+
+    private static func transferOffsets(for mode: Int) -> [Int] {
         // Common SNES DMA transfer modes:
         // 0: 1 byte (b)
         // 1: 2 bytes (b, b+1)

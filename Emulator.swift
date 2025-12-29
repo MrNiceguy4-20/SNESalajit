@@ -20,6 +20,7 @@ final class Emulator {
         ppu.attach(bus: bus)
         apu.attach(bus: bus)
 
+        bus.video.interruptController = bus.irq
         bus.cpu = cpu
         bus.ppu = ppu
         bus.ppuOwner = self

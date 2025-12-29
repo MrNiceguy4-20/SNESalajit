@@ -33,6 +33,9 @@ struct VideoTiming {
         scanline >= VideoTiming.vblankStartScanline
     }
 
+    // Reference to InterruptController for VBlank callbacks
+    weak var interruptController: InterruptController?
+
     mutating func reset() {
         dot = 0
         scanline = 0
@@ -69,6 +72,7 @@ struct VideoTiming {
         if !inVBlank && scanline == VideoTiming.vblankStartScanline {
             inVBlank = true
             didEnterVBlank = true
+            interruptController?.onEnterVBlank(dot: dot, scanline: scanline)
         }
 
         if scanline >= VideoTiming.totalScanlines {
@@ -76,6 +80,7 @@ struct VideoTiming {
             if inVBlank {
                 inVBlank = false
                 didLeaveVBlank = true
+                interruptController?.onLeaveVBlank(dot: dot, scanline: scanline)
             }
         }
     }

@@ -905,6 +905,15 @@ enum CPUInstructionTables {
         case 0xE6: return "INC dp"
         case 0x41: return "EOR (dp,X)"
         case 0xBB: return "TYX"
+
+        case 0x26: return "ROL dp"
+        case 0x36: return "ROL dp,X"
+        case 0x2E: return "ROL abs"
+        case 0x3E: return "ROL abs,X"
+        case 0x66: return "ROR dp"
+        case 0x76: return "ROR dp,X"
+        case 0x6E: return "ROR abs"
+        case 0x7E: return "ROR abs,X"
         default: return String(format: "OP $%02X", Int(opcode))
         }
     }
