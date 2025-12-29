@@ -145,31 +145,52 @@ final class Bus {
         }
     }
 
-    private func romOffsetForMapping(_ mapping: Cartridge.Mapping, bank: u8, addr: u16) -> Int? {
+        private func romOffsetForMapping(_ mapping: Cartridge.Mapping, bank: u8, addr: u16) -> Int? {
         let b = Int(bank)
         if b == 0x7E || b == 0x7F { return nil }
 
         switch mapping {
         case .loROM:
-            if addr >= 0x8000 {
-                return ((b & 0x7F) * 0x8000) + Int(addr - 0x8000)
+            // LoROM ROM mapping:
+            // 00-3F,80-BF: 8000-FFFF -> ROM
+            // 40-7D,C0-FF: 0000-7FFF -> ROM (mirror)
+            if (b <= 0x3F) || (b >= 0x80 && b <= 0xBF) {
+                guard addr >= 0x8000 else { return nil }
+                return ((b & 0x3F) * 0x8000) + Int(addr - 0x8000)
             }
-            if (b >= 0x40 && b <= 0x7D) || b >= 0xC0 {
+            if (b >= 0x40 && b <= 0x7D) || (b >= 0xC0 && b <= 0xFF) {
+                guard addr < 0x8000 else { return nil }
                 return ((b & 0x3F) * 0x8000) + Int(addr)
             }
             return nil
+
         case .hiROM:
-            if b < 0xC0 { return nil }
-            return (Int(b - 0xC0) * 0x10000) + Int(addr)
+            // HiROM ROM mapping:
+            // 00-3F,80-BF: 8000-FFFF -> ROM
+            // 40-7D,C0-FF: 0000-FFFF -> ROM
+            if (b <= 0x3F) || (b >= 0x80 && b <= 0xBF) {
+                guard addr >= 0x8000 else { return nil }
+                return ((b & 0x3F) * 0x10000) + Int(addr)
+            }
+            if (b >= 0x40 && b <= 0x7D) || (b >= 0xC0 && b <= 0xFF) {
+                return ((b & 0x3F) * 0x10000) + Int(addr)
+            }
+            return nil
+
         case .unknown:
             return nil
         }
     }
 
-    private func readCartridgeByte(_ cart: Cartridge, mapping: Cartridge.Mapping, bank: u8, addr: u16) -> u8? {
-        guard let off = romOffsetForMapping(mapping, bank: bank, addr: addr) else { return nil }
-        guard off >= 0 && off < cart.rom.count else { return nil }
-        return cart.rom[off]
+        private func readCartridgeByte(_ cart: Cartridge, mapping: Cartridge.Mapping, bank: u8, addr: u16) -> u8? {
+        guard let off0 = romOffsetForMapping(mapping, bank: bank, addr: addr) else { return nil }
+        let count = cart.rom.count
+        guard count > 0 else { return nil }
+
+        // Mirror/wrap within ROM size for out-of-range accesses (common with smaller ROMs).
+        let off = off0 >= 0 ? (off0 % count) : nil
+        guard let o = off else { return nil }
+        return cart.rom[o]
     }
 
     private func readVector16(_ cart: Cartridge, mapping: Cartridge.Mapping, addr: u16) -> u16? {
@@ -208,11 +229,11 @@ final class Bus {
             irq.onEnterVBlank(dot: video.dot, scanline: video.scanline)
             if hdmaen != 0 { dma.hdmaInit(mask: hdmaen, bus: self) }
             if irq.autoJoypadEnable { autoJoypadStartDelayDots = 75 }
-            ppu?.onEnterVBlank()
+            ppu?.reset()
         }
         if video.consumeDidLeaveVBlank() {
             irq.onLeaveVBlank(dot: video.dot, scanline: video.scanline)
-            ppu?.onLeaveVBlank()
+            ppu?.reset()
         }
         if autoJoypadStartDelayDots > 0 {
             autoJoypadStartDelayDots -= 1
@@ -225,10 +246,10 @@ final class Bus {
             return wram.read8(offset: (Int(bank - 0x7E) << 16) | Int(addr))
         }
         if isIOBank(bank), addr < 0x2000 {
-            return wram.read8(offset: Int(addr))
+            let v = wram.read8(offset: Int(addr)); openBus = v; return v
         }
         if isIOBank(bank), (MMIO.isMMIO(addr) || addr == 0x4016 || addr == 0x4017) {
-            return read8_mmio(addr)
+            let v = read8_mmio(addr); openBus = v; return v
         }
         if let c = cartridge {
             let mapping = vectorMappingOverride ?? c.mapping
@@ -319,59 +340,78 @@ final class Bus {
     private func isIOBank(_ bank: u8) -> Bool { (bank & 0x7F) <= 0x3F }
 
     func read8_mmio(_ addr: u16) -> u8 {
-        if addr == 0x4016 {
-            let v = (openBus & 0xFE) | joypads.read4016()
-            return v
-        }
-        if addr == 0x4017 {
-            let v = (openBus & 0xFE) | joypads.read4017()
-            return v
-        }
-        if addr == 0x2180 {
-            let v = wram.read8(offset: wramPortAddr)
+        var v: u8 = openBus
+
+        if addr >= 0x2100 && addr <= 0x21FF {
+            v = ppu?.readRegister(addr: addr, openBus: openBus, video: video) ?? openBus
+
+        } else if addr >= 0x2140 && addr <= 0x2143 {
+            v = apu?.cpuReadPort(Int(addr - 0x2140)) ?? openBus
+
+        } else if addr == 0x2180 {
+            v = wram.read8(offset: wramPortAddr)
             wramPortAddr = (wramPortAddr + 1) & 0x1FFFF
-            return v
-        }
-        if addr == 0x2181 { return u8(truncatingIfNeeded: wramPortAddr) }
-        if addr == 0x2182 { return u8(truncatingIfNeeded: (wramPortAddr >> 8)) }
-        if addr == 0x2183 { return u8(truncatingIfNeeded: (wramPortAddr >> 16) & 0x01) }
-        if addr >= 0x2140 && addr <= 0x2143 {
-            return apu?.cpuReadPort(Int(addr - 0x2140)) ?? openBus
-        }
-        if addr >= 0x2100 && addr <= 0x21FF { return ppu?.readRegister(addr: addr, openBus: openBus, video: video) ?? openBus }
-        if addr >= 0x4200 && addr <= 0x421F { return readCPUReg(addr) }
-        if addr >= 0x4300 && addr <= 0x437F {
+
+        } else if addr >= 0x4200 && addr <= 0x421F {
+            v = readCPUReg(addr)
+
+        } else if addr >= 0x4300 && addr <= 0x437F {
             let ch = Int((addr - 0x4300) / 0x10)
             let reg = Int((addr - 0x4300) % 0x10)
-            return dma.readReg(channel: ch, reg: reg)
+            v = dma.readReg(channel: ch, reg: reg)
+
+        } else if addr == 0x4016 {
+            v = joypads.read4016()
         }
-        return openBus
+
+        openBus = v
+        return v
     }
 
     func write8_mmio(_ addr: u16, value: u8) {
         openBus = value
-        if addr == 0x4016 { joypads.writeStrobe(value); return }
+
+        if addr == 0x4016 {
+            joypads.writeStrobe(value)
+            return
+        }
+
         if addr == 0x2180 {
             wram.write8(offset: wramPortAddr, value: value)
             wramPortAddr = (wramPortAddr + 1) & 0x1FFFF
             return
         }
+
         if addr == 0x2181 {
             wramPortAddr = (wramPortAddr & 0x1FF00) | Int(value)
             return
         }
+
         if addr == 0x2182 {
             wramPortAddr = (wramPortAddr & 0x100FF) | (Int(value) << 8)
             return
         }
+
         if addr == 0x2183 {
             wramPortAddr = (wramPortAddr & 0x0FFFF) | ((Int(value) & 0x01) << 16)
             return
         }
-        if addr >= 0x2140 && addr <= 0x2143 { apu?.cpuWritePort(Int(addr - 0x2140), value: value); return }
-        if addr >= 0x2100 && addr <= 0x21FF { ppu?.writeRegister(addr: addr, value: value, openBus: &openBus, video: video); return }
-        if addr >= 0x4200 && addr <= 0x421F { writeCPUReg(addr, value: value); return }
-        
+
+        if addr >= 0x2140 && addr <= 0x2143 {
+            apu?.cpuWritePort(Int(addr - 0x2140), value: value)
+            return
+        }
+
+        if addr >= 0x2100 && addr <= 0x21FF {
+            ppu?.writeRegister(addr: addr, value: value, openBus: &openBus, video: video)
+            return
+        }
+
+        if addr >= 0x4200 && addr <= 0x421F {
+            writeCPUReg(addr, value: value)
+            return
+        }
+
         if addr >= 0x4300 && addr <= 0x437F {
             let ch = Int((addr - 0x4300) / 0x10)
             let reg = Int((addr - 0x4300) % 0x10)
@@ -379,6 +419,7 @@ final class Bus {
             return
         }
     }
+
 
     private func beginAutoJoypad() {
         joypads.latch()

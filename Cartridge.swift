@@ -20,16 +20,19 @@ final class Cartridge {
         self.sram = sramSizeBytes > 0 ? Array(repeating: 0x00, count: sramSizeBytes) : []
     }
 
-    func read8(bank: u8, addr: u16) -> u8 {
+        func read8(bank: u8, addr: u16) -> u8 {
         if isSRAM(bank: bank, addr: addr) {
             let off = sramOffset(bank: bank, addr: addr)
             if off >= 0 && off < sram.count { return sram[off] }
             return 0xFF
         }
-        guard let off = romOffset(bank: bank, addr: addr) else { return 0xFF }
-        guard off >= 0 && off < rom.count else { return 0xFF }
+        guard let off0 = romOffset(bank: bank, addr: addr) else { return 0xFF }
+        let count = rom.count
+        guard count > 0 else { return 0xFF }
+        let off = off0 >= 0 ? (off0 % count) : 0
         return rom[off]
     }
+
 
     func write8(bank: u8, addr: u16, value: u8) {
         guard hasSRAM, isSRAM(bank: bank, addr: addr) else { return }
@@ -38,25 +41,37 @@ final class Cartridge {
         sram[off] = value
     }
 
-    func romOffset(bank: u8, addr: u16) -> Int? {
+        func romOffset(bank: u8, addr: u16) -> Int? {
         let b = Int(bank)
         if b == 0x7E || b == 0x7F { return nil }
+
         switch mapping {
         case .loROM:
-            if addr >= 0x8000 {
-                return ((b & 0x7F) * 0x8000) + Int(addr - 0x8000)
+            if (b <= 0x3F) || (b >= 0x80 && b <= 0xBF) {
+                guard addr >= 0x8000 else { return nil }
+                return ((b & 0x3F) * 0x8000) + Int(addr - 0x8000)
             }
-            if (b >= 0x40 && b <= 0x7D) || b >= 0xC0 {
+            if (b >= 0x40 && b <= 0x7D) || (b >= 0xC0 && b <= 0xFF) {
+                guard addr < 0x8000 else { return nil }
                 return ((b & 0x3F) * 0x8000) + Int(addr)
             }
             return nil
+
         case .hiROM:
-            if b < 0xC0 { return nil }
-            return (Int(b - 0xC0) * 0x10000) + Int(addr)
+            if (b <= 0x3F) || (b >= 0x80 && b <= 0xBF) {
+                guard addr >= 0x8000 else { return nil }
+                return ((b & 0x3F) * 0x10000) + Int(addr)
+            }
+            if (b >= 0x40 && b <= 0x7D) || (b >= 0xC0 && b <= 0xFF) {
+                return ((b & 0x3F) * 0x10000) + Int(addr)
+            }
+            return nil
+
         case .unknown:
             return nil
         }
     }
+
 
     private func isSRAM(bank: u8, addr: u16) -> Bool {
         let b = Int(bank)
