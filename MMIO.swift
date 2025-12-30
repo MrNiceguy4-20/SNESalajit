@@ -12,7 +12,7 @@ enum MMIO {
     static let dmaStart: u16 = 0x4300
     static let dmaEnd:   u16 = 0x437F
 
-    static func isMMIO(_ addr: u16) -> Bool {
+    @inline(__always) static func isMMIO(_ addr: u16) -> Bool {
         (addr >= ppuStart && addr <= ppuEnd) ||
         (addr >= apuStart && addr <= apuEnd) ||
         (addr >= wramPortStart && addr <= wramPortEnd) ||

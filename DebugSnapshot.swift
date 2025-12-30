@@ -1,9 +1,9 @@
 import Foundation
 
 enum Hex {
-    static func u8(_ v: UInt8) -> String { String(format: "$%02X", v) }
-    static func u16(_ v: UInt16) -> String { String(format: "$%04X", v) }
-    static func u24(bank: UInt8, addr: UInt16) -> String {
+    @inline(__always) static func u8(_ v: UInt8) -> String { String(format: "$%02X", v) }
+    @inline(__always) static func u16(_ v: UInt16) -> String { String(format: "$%04X", v) }
+    @inline(__always) static func u24(bank: UInt8, addr: UInt16) -> String {
         String(format: "$%02X:%04X", bank, addr)
     }
 }
@@ -73,6 +73,8 @@ struct APUDebugSnapshot: Sendable {
 struct EmulatorDebugSnapshot: Sendable {
     let wallClock: Date
     let isRunning: Bool
+    let romName: String?
+    let romSHA1: String?
     let cpu: CPU65816DebugSnapshot
     let cpuLastInstruction: CPU65816.InstructionTraceEntry?
     let cpuTrace: [CPU65816.InstructionTraceEntry]
@@ -81,4 +83,6 @@ struct EmulatorDebugSnapshot: Sendable {
     let ppuFramebufferSize: (width: Int, height: Int)
     let spc: APUDebugSnapshot
     let recentLogs: [String]
+    let logs: [String]
+
 }

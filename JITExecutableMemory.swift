@@ -6,7 +6,7 @@ final class JITExecutableMemory {
     private(set) var capacity: Int = 0
     private(set) var offset: Int = 0
 
-    func reset() {
+    @inline(__always) func reset() {
         if let p = ptr, capacity > 0 {
             munmap(p, capacity)
         }
@@ -17,7 +17,7 @@ final class JITExecutableMemory {
 
     deinit { reset() }
 
-    func ensure(minCapacity: Int = 64 * 1024) {
+    @inline(__always) func ensure(minCapacity: Int = 64 * 1024) {
         if capacity >= minCapacity, ptr != nil { return }
 
         reset()
@@ -37,7 +37,7 @@ final class JITExecutableMemory {
         offset = 0
     }
 
-    func append(_ bytes: [UInt8]) -> UnsafeRawPointer? {
+    @inline(__always) func append(_ bytes: [UInt8]) -> UnsafeRawPointer? {
         ensure()
         guard let p = ptr, offset + bytes.count <= capacity else { return nil }
         let dst = p.advanced(by: offset)

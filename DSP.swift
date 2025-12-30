@@ -33,7 +33,7 @@ final class DSP {
 
     private var lastVoiceOut: [Int] = Array(repeating: 0, count: 8)
     
-    func reset() {
+    @inline(__always) func reset() {
         regs = Array(repeating: 0, count: 0x80)
         voices.forEach { $0.keyOff() }
         mvolL = 127; mvolR = 127
@@ -53,7 +53,7 @@ final class DSP {
         noisePeriod = 4
     }
 
-    func read(reg: Int) -> u8 {
+    @inline(__always) func read(reg: Int) -> u8 {
         let r = reg & 0x7F
         if r == 0x7C {
             let v = endx
@@ -63,7 +63,7 @@ final class DSP {
         return regs[r]
     }
 
-    func write(reg: Int, value: u8) {
+    @inline(__always) func write(reg: Int, value: u8) {
         let r = reg & 0x7F
         regs[r] = value
 
@@ -118,7 +118,7 @@ final class DSP {
         }
     }
 
-    private func nextNoiseSample() -> Int {
+    @inline(__always) private func nextNoiseSample() -> Int {
         noiseCounter += 1
         if noiseCounter >= noisePeriod {
             noiseCounter = 0
@@ -128,7 +128,7 @@ final class DSP {
         return ((noiseLFSR & 1) != 0) ? 16384 : -16384
     }
 
-    func mix(readRAM: (Int)->u8, writeRAM: (Int, Int)->Void) -> (Int, Int) {
+    @inline(__always) func mix(readRAM: (Int)->u8, writeRAM: (Int, Int)->Void) -> (Int, Int) {
         let noise = nextNoiseSample()
         var newEndx: u8 = 0
         var dryL = 0

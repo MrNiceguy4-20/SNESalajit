@@ -1,6 +1,26 @@
 import Foundation
 
 final class Bus {
+    enum AccessSource: String, Sendable {
+        case cpu = "CPU"
+        case dma = "DMA"
+        case ppu = "PPU"
+        case apu = "APU"
+        case debug = "DBG"
+    }
+
+    struct BusTransaction: Sendable {
+        let masterCycle: UInt64
+        let scanline: Int
+        let dot: Int
+        let source: AccessSource
+        let isWrite: Bool
+        let bank: u8
+        let addr: u16
+        let value: u8
+        let cpuPC24: UInt32?
+    }
+
     @inline(__always) func isIOBank(_ bank: u8) -> Bool {
         return bank == 0x00 || bank == 0x80
     }
@@ -16,6 +36,13 @@ final class Bus {
     private var wramPortAddr: Int = 0
     var video = VideoTiming()
     private var dotCycleAcc: Int = 0
+    private var masterCycleCounter: UInt64 = 0
+    private var txRing: [BusTransaction] = []
+    private var txRingHead: Int = 0
+    private var txRingCount: Int = 0
+    private let txRingCapacity: Int = 4096
+    let faults = FaultRecorder()
+
     let irq = InterruptController()
     private let dma = DMAEngine()
     private let joypads = JoypadIO()
@@ -49,6 +76,8 @@ final class Bus {
         let autoJoypadEnable: Bool
         let mdmaEnabled: u8
         let hdmaEnabled: u8
+        let cartridgeMapping: Cartridge.Mapping
+        let vectorMappingOverride: Cartridge.Mapping?
         let dmaStallCycles: Int
         let autoJoypadBusy: Bool
         let autoJoy1: u16
@@ -63,9 +92,62 @@ final class Bus {
         let lastRDNMI: u8
         let lastTIMEUP: u8
         let irq: InterruptController.InterruptDebugState
+        let masterCycleCounter: UInt64
+        let transactions: [BusTransaction]
+        let lastFault: FaultRecorder.FaultEvent?
     }
 
-    func debugSnapshot() -> BusDebugState {
+    @inline(__always) var masterCycles: UInt64 { masterCycleCounter }
+
+    @inline(__always) private func recordTransaction(source: AccessSource,
+                                                     isWrite: Bool,
+                                                     bank: u8,
+                                                     addr: u16,
+                                                     value: u8) {
+        let pc24: UInt32? = {
+            guard let cpu = cpu else { return nil }
+            return (UInt32(cpu.r.pb) << 16) | UInt32(cpu.r.pc)
+        }()
+        let t = BusTransaction(
+            masterCycle: masterCycleCounter,
+            scanline: video.scanline,
+            dot: video.dot,
+            source: source,
+            isWrite: isWrite,
+            bank: bank,
+            addr: addr,
+            value: value,
+            cpuPC24: pc24
+        )
+        if txRingCount < txRingCapacity {
+            txRing.append(t)
+            txRingCount += 1
+            txRingHead = txRingCount % txRingCapacity
+        } else {
+            txRing[txRingHead] = t
+            txRingHead = (txRingHead + 1) % txRingCapacity
+        }
+    }
+
+    @inline(__always) func transactionTrace(max: Int = 200) -> [BusTransaction] {
+        if txRingCount == 0 { return [] }
+        let count = min(max, txRingCount)
+        var out: [BusTransaction] = []
+        out.reserveCapacity(count)
+        if txRingCount < txRingCapacity {
+            let start = Swift.max(0, txRingCount - count)
+            out.append(contentsOf: txRing[start..<txRingCount])
+        } else {
+            // ring full: txRingHead points to next write position
+            let start = (txRingHead - count + txRingCapacity) % txRingCapacity
+            for i in 0..<count {
+                out.append(txRing[(start + i) % txRingCapacity])
+            }
+        }
+        return out
+    }
+
+    @inline(__always) func debugSnapshot() -> BusDebugState {
         BusDebugState(
             scanline: video.scanline,
             dot: video.dot,
@@ -79,6 +161,8 @@ final class Bus {
             autoJoypadEnable: irq.autoJoypadEnable,
             mdmaEnabled: mdmaen,
             hdmaEnabled: hdmaen,
+            cartridgeMapping: cartridge?.mapping ?? .unknown,
+            vectorMappingOverride: vectorMappingOverride,
             dmaStallCycles: dmaStallMasterCycles,
             autoJoypadBusy: video.autoJoypadBusy,
             autoJoy1: autoJoy1,
@@ -92,17 +176,24 @@ final class Bus {
             lastNMITIMEN: lastNMITIMEN,
             lastRDNMI: lastRDNMI,
             lastTIMEUP: lastTIMEUP,
-            irq: irq.debugSnapshot()
+            irq: irq.debugSnapshot(),
+            masterCycleCounter: masterCycleCounter,
+            transactions: transactionTrace(max: 200),
+            lastFault: faults.last()
         )
     }
 
-    func reset() {
+    @inline(__always) func reset() {
         wram.reset()
         ppu?.reset()
         wramPortAddr = 0
         video.reset()
         irq.reset()
         dotCycleAcc = 0
+        masterCycleCounter = 0
+        txRing.removeAll(keepingCapacity: true)
+        txRingHead = 0
+        txRingCount = 0
         dma.reset()
         joypads.reset()
         autoJoy1 = 0xFFFF
@@ -124,7 +215,7 @@ final class Bus {
         cpu?.setIRQ(false)
     }
 
-    func insertCartridge(_ cart: Cartridge) {
+    @inline(__always) func insertCartridge(_ cart: Cartridge) {
         cartridge = cart
         vectorMappingOverride = nil
         let cur = cart.mapping
@@ -150,7 +241,26 @@ final class Bus {
         }
     }
 
-    private func romOffsetForMapping(_ mapping: Cartridge.Mapping, bank: u8, addr: u16) -> Int? {
+/// Force the active cartridge mapping. This is used as a runtime override when the ROM header's
+/// reported mapping is wrong or ambiguous. When set, all cartridge reads will use the override.
+    @inline(__always) func forceCartridgeMapping(_ mapping: Cartridge.Mapping) {
+    guard cartridge != nil else { return }
+    vectorMappingOverride = mapping
+}
+
+/// Clear any forced mapping override, reverting to the cartridge's header-reported mapping.
+    @inline(__always) func clearForcedCartridgeMapping() {
+    vectorMappingOverride = nil
+}
+
+/// Returns the mapping currently used for cartridge reads (override if present, else header mapping).
+    @inline(__always) func effectiveCartridgeMapping() -> Cartridge.Mapping {
+    if let ov = vectorMappingOverride { return ov }
+    return cartridge?.mapping ?? .unknown
+}
+
+
+    @inline(__always) private func romOffsetForMapping(_ mapping: Cartridge.Mapping, bank: u8, addr: u16) -> Int? {
         let b = Int(bank)
         if b == 0x7E || b == 0x7F { return nil }
 
@@ -185,7 +295,7 @@ final class Bus {
         }
     }
 
-    private func readCartridgeByte(_ cart: Cartridge, mapping: Cartridge.Mapping, bank: u8, addr: u16) -> u8? {
+    @inline(__always) private func readCartridgeByte(_ cart: Cartridge, mapping: Cartridge.Mapping, bank: u8, addr: u16) -> u8? {
         guard let off0 = romOffsetForMapping(mapping, bank: bank, addr: addr) else { return nil }
         let count = cart.rom.count
         guard count > 0 else { return nil }
@@ -195,14 +305,14 @@ final class Bus {
     }
 
 
-    func readVector16(_ cart: Cartridge, mapping: Cartridge.Mapping, addr: u16) -> u16? {
+    @inline(__always) func readVector16(_ cart: Cartridge, mapping: Cartridge.Mapping, addr: u16) -> u16? {
         func readVec(_ m: Cartridge.Mapping) -> u16? {
             guard let lo = readCartridgeByte(cart, mapping: m, bank: 0x00, addr: addr) else { return nil }
             guard let hi = readCartridgeByte(cart, mapping: m, bank: 0x00, addr: addr &+ 1) else { return nil }
             return u16(lo) | (u16(hi) << 8)
         }
 
-        func vectorTargetLooksValid(_ m: Cartridge.Mapping, _ v: u16) -> Bool {
+        @inline(__always) func vectorTargetLooksValid(_ m: Cartridge.Mapping, _ v: u16) -> Bool {
             if v < 0x8000 { return false }
             guard let op = readCartridgeByte(cart, mapping: m, bank: 0x00, addr: v) else { return false }
             if op == 0xFF { return false }
@@ -228,7 +338,7 @@ final class Bus {
     }
 
 
-    func consumeDMAStall(masterCycles maxMasterCycles: Int) -> Int {
+    @inline(__always) func consumeDMAStall(masterCycles maxMasterCycles: Int) -> Int {
         if dmaStallMasterCycles <= 0 { return 0 }
         let c = min(maxMasterCycles, dmaStallMasterCycles)
         dmaStallMasterCycles -= c
@@ -237,8 +347,9 @@ final class Bus {
 
     var isDMASstallingCPU: Bool { dmaStallMasterCycles > 0 }
 
-    func step(masterCycles: Int) {
+    @inline(__always) func step(masterCycles: Int) {
         dotCycleAcc += masterCycles
+        masterCycleCounter &+= UInt64(masterCycles)
         while dotCycleAcc >= VideoTiming.masterCyclesPerDot {
             dotCycleAcc -= VideoTiming.masterCyclesPerDot
             tickDot()
@@ -247,7 +358,7 @@ final class Bus {
         cpu?.setIRQ(irq.irqLine)
     }
 
-    private func tickDot() {
+    @inline(__always) private func tickDot() {
         irq.reapplyLatchedNMITIMEN(dot: video.dot, scanline: video.scanline)
         irq.pollHVMatch(dot: video.dot, scanline: video.scanline)
         video.stepDot()
@@ -272,7 +383,7 @@ final class Bus {
         }
     }
 
-    func read8_physical(bank: u8, addr: u16) -> u8 {
+    @inline(__always) func read8_physical(bank: u8, addr: u16) -> u8 {
         // Physical reads are used for things like debug/trace and vector plausibility checks.
         // They should reflect the same mapping rules as normal CPU reads, including open-bus behavior.
 
@@ -294,6 +405,14 @@ final class Bus {
             return v
         }
 
+        // Mirror the CPU's open-bus behavior for unmapped I/O space ($2000-$7FFF in I/O banks)
+        // so physical reads used by tracing/debug don't accidentally pull cartridge data here.
+        if isIOBank(bank), addr >= 0x2000, addr < 0x8000,
+           !(MMIO.isMMIO(addr) || addr == 0x4016 || addr == 0x4017) {
+            return openBus
+        }
+
+
         if let c = cartridge {
             let mapping = vectorMappingOverride ?? c.mapping
             if let v = readCartridgeByte(c, mapping: mapping, bank: bank, addr: addr) {
@@ -309,14 +428,14 @@ final class Bus {
     }
 
 
-    func read8_dma(bank: u8, addr: u16) -> u8 {
+    @inline(__always) func read8_dma(bank: u8, addr: u16) -> u8 {
         dmaActive = true
         let v = read8(bank: bank, addr: addr)
         dmaActive = false
         return v
     }
 
-    func read8(bank: u8, addr: u16) -> u8 {
+    @inline(__always) func read8(bank: u8, addr: u16, source: AccessSource = .cpu) -> u8 {
         if !dmaActive {
             if let cpu = cpu, cpu.isWaiting && !cpu.nmiPending && !cpu.irqLine { return openBus }
         }
@@ -325,12 +444,14 @@ final class Bus {
             let o = (Int(bank - 0x7E) << 16) | Int(addr)
             let v = wram.read8(offset: o)
             openBus = v
+            recordTransaction(source: source, isWrite: false, bank: bank, addr: addr, value: v)
             return v
         }
 
         if isIOBank(bank), addr < 0x2000 {
             let v = wram.read8(offset: Int(addr))
             openBus = v
+            recordTransaction(source: source, isWrite: false, bank: bank, addr: addr, value: v)
             return v
         }
         if isIOBank(bank), addr >= 0x2000, addr < 0x8000,
@@ -338,7 +459,7 @@ final class Bus {
             return openBus
         }
         if isIOBank(bank), (MMIO.isMMIO(addr) || addr == 0x4016 || addr == 0x4017) {
-            let v = read8_mmio(addr)
+            let v = read8_mmio(addr, source: source)
             openBus = v
             return v
         }
@@ -346,47 +467,53 @@ final class Bus {
             if let ov = vectorMappingOverride, isIOBank(bank), addr >= 0xFF00 {
                 if let v = readCartridgeByte(c, mapping: ov, bank: bank, addr: addr) {
                     openBus = v
+                recordTransaction(source: source, isWrite: false, bank: bank, addr: addr, value: v)
                     return v
                 }
             }
             let mapping = vectorMappingOverride ?? c.mapping
             if let v = readCartridgeByte(c, mapping: mapping, bank: bank, addr: addr) {
                 openBus = v
+                recordTransaction(source: source, isWrite: false, bank: bank, addr: addr, value: v)
                 return v
             }
             let v = c.read8(bank: bank, addr: addr)
             openBus = v
+            recordTransaction(source: source, isWrite: false, bank: bank, addr: addr, value: v)
             return v
         }
         return openBus
     }
 
-    func write8(bank: u8, addr: u16, value: u8) {
+    @inline(__always) func write8(bank: u8, addr: u16, value: u8, source: AccessSource = .cpu) {
         openBus = value
 
         if isIOBank(bank), addr < 0x2000 {
             if MMIO.isMMIO(addr) || addr == 0x4016 || addr == 0x4017 {
-                write8_mmio(addr, value: value)
+                write8_mmio(addr, value: value, source: source)
                 return
             }
             wram.write8(offset: Int(addr & 0x1FFF), value: value)
+            recordTransaction(source: source, isWrite: true, bank: bank, addr: addr, value: value)
             return
         }
 
         if bank == 0x7E || bank == 0x7F {
             let o = (Int(bank - 0x7E) << 16) | Int(addr)
             wram.write8(offset: o, value: value)
+            recordTransaction(source: source, isWrite: true, bank: bank, addr: addr, value: value)
             return
         }
 
         if isIOBank(bank), (MMIO.isMMIO(addr) || addr == 0x4016 || addr == 0x4017) {
-            write8_mmio(addr, value: value)
+            write8_mmio(addr, value: value, source: source)
             return
         }
         cartridge?.write8(bank: bank, addr: addr, value: value)
+        recordTransaction(source: source, isWrite: true, bank: bank, addr: addr, value: value)
     }
 
-    func read8_mmio(_ addr: u16) -> u8 {
+    @inline(__always) func read8_mmio(_ addr: u16, source: AccessSource = .cpu) -> u8 {
         var v: u8 = openBus
 
         // APU ports must be checked before the broad PPU $2100-$21FF range.
@@ -415,11 +542,14 @@ final class Bus {
         }
 
         openBus = v
+        recordTransaction(source: source, isWrite: false, bank: 0x00, addr: addr, value: v)
         return v
     }
 
-    func write8_mmio(_ addr: u16, value: u8) {
+    @inline(__always) func write8_mmio(_ addr: u16, value: u8, source: AccessSource = .cpu) {
         openBus = value
+
+        defer { recordTransaction(source: source, isWrite: true, bank: 0x00, addr: addr, value: value) }
 
         if addr == 0x4016 {
             joypads.writeStrobe(value)
@@ -466,11 +596,22 @@ final class Bus {
             dma.writeReg(channel: ch, reg: reg, value: value)
             return
         }
+        // Unhandled MMIO writes are typically a bug in the emulator mapping.
+        let pc24: UInt32? = {
+            guard let cpu = cpu else { return nil }
+            return (UInt32(cpu.r.pb) << 16) | UInt32(cpu.r.pc)
+        }()
+        faults.record(component: "Bus",
+                      message: String(format: "Unhandled MMIO write $%04X = $%02X", addr, value),
+                      pc24: pc24,
+                      masterCycle: masterCycleCounter,
+                      scanline: video.scanline,
+                      dot: video.dot)
     }
 
 
 
-    private func beginAutoJoypad() {
+    @inline(__always) private func beginAutoJoypad() {
         joypads.latch()
         let (w1, w2) = joypads.latchedWords()
         autoJoy1 = w1
@@ -478,7 +619,7 @@ final class Bus {
         video.autoJoypadBusyDots = 1056
     }
 
-    private func readCPUReg(_ addr: u16) -> u8 {
+    @inline(__always) private func readCPUReg(_ addr: u16) -> u8 {
         switch addr {
         case 0x4210:
             rdnmiReadCount &+= 1
@@ -507,7 +648,7 @@ final class Bus {
         }
     }
 
-    private func writeCPUReg(_ addr: u16, value: u8) {
+    @inline(__always) private func writeCPUReg(_ addr: u16, value: u8) {
         switch addr {
         case 0x4200:
             nmitimenWriteCount &+= 1

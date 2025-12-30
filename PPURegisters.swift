@@ -87,7 +87,7 @@ final class PPURegisters {
     private var hvLatchToggleH: Bool = false
     private var hvLatchToggleV: Bool = false
 
-    func reset() {
+    @inline(__always) func reset() {
         forcedBlank = true
         brightness = 0
         bgMode = 1
@@ -126,7 +126,7 @@ final class PPURegisters {
         hvLatchToggleV = false
     }
 
-    func read(addr: u16, mem: PPUMemory, openBus: u8, video: VideoTiming) -> u8 {
+    @inline(__always) func read(addr: u16, mem: PPUMemory, openBus: u8, video: VideoTiming) -> u8 {
         trace(video, "R \(hex16(addr))")
         switch addr {
         case 0x2137:
@@ -167,7 +167,7 @@ final class PPURegisters {
         }
     }
 
-    func write(addr: u16, value: u8, mem: PPUMemory, openBus: inout u8, video: VideoTiming) {
+    @inline(__always) func write(addr: u16, value: u8, mem: PPUMemory, openBus: inout u8, video: VideoTiming) {
         trace(video, "W \(hex16(addr)) = \(hex8(value))")
         switch addr {
         case 0x2100:
@@ -316,7 +316,7 @@ final class PPURegisters {
         }
     }
 
-    func windowAllows(_ layer: Layer, x: Int) -> Bool {
+    @inline(__always) func windowAllows(_ layer: Layer, x: Int) -> Bool {
         let sel = windowSel(for: layer)
         let w1en = (sel & 0x02) != 0
         let w1inv = (sel & 0x01) != 0
@@ -343,7 +343,7 @@ final class PPURegisters {
     var colorMathSub: Bool { (cgadsub & 0x80) != 0 }
     var colorMathHalf: Bool { (cgadsub & 0x40) != 0 }
 
-    func colorMathApplies(_ layer: Layer) -> Bool {
+    @inline(__always) func colorMathApplies(_ layer: Layer) -> Bool {
         switch layer {
         case .bg1: return (cgadsub & 0x01) != 0
         case .bg2: return (cgadsub & 0x02) != 0
@@ -354,9 +354,9 @@ final class PPURegisters {
         }
     }
 
-    func fixedColor() -> (r: Int, g: Int, b: Int) { (fixedColorR, fixedColorG, fixedColorB) }
+    @inline(__always) func fixedColor() -> (r: Int, g: Int, b: Int) { (fixedColorR, fixedColorG, fixedColorB) }
 
-    private func advanceVRAMAddress() {
+    @inline(__always) private func advanceVRAMAddress() {
         let inc: u16
         switch vmain & 0x03 {
         case 0x00: inc = 1
@@ -380,7 +380,7 @@ final class PPURegisters {
         }
     }
 
-    private func applyFixedColorComponent(_ v: u8) {
+    @inline(__always) private func applyFixedColorComponent(_ v: u8) {
         let intensity = Int(v & 0x1F)
         if (v & 0x20) != 0 { fixedColorB = intensity }
         if (v & 0x40) != 0 { fixedColorG = intensity }

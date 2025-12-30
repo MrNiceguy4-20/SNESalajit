@@ -1,7 +1,7 @@
 import Foundation
 
 enum SNESColor {
-    static func bgr555ToRGBA8(_ bgr: u16) -> u32 {
+    @inline(__always) static func bgr555ToRGBA8(_ bgr: u16) -> u32 {
         let r5 = u32(bgr & 0x1F)
         let g5 = u32((bgr >> 5) & 0x1F)
         let b5 = u32((bgr >> 10) & 0x1F)

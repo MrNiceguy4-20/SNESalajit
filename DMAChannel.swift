@@ -16,7 +16,7 @@ struct DMAChannel {
     var hdmaLineCounter: u8 = 0
     var hdmaDoTransfer: Bool = false
 
-    mutating func reset() {
+    @inline(__always) mutating func reset() {
         dmap = 0
         bbad = 0
         a1t = 0
@@ -42,7 +42,7 @@ struct DMAChannel {
         (u32(a1b) << 16) | u32(a1t)
     }
 
-    mutating func advanceABus() {
+    @inline(__always) mutating func advanceABus() {
         if fixed { return }
         let delta: Int32 = decrement ? -1 : 1
         var full = Int32((Int32(a1b) << 16) | Int32(a1t))

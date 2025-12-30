@@ -46,7 +46,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         super.init()
     }
 
-    func update(framebuffer: Framebuffer) {
+    @inline(__always) func update(framebuffer: Framebuffer) {
         latestFramebuffer = framebuffer
         ensureTexture(width: framebuffer.width, height: framebuffer.height)
         upload(framebuffer: framebuffer)
@@ -55,7 +55,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         missingTextureWarningEmitted = false
     }
 
-    private func ensureTexture(width: Int, height: Int) {
+    @inline(__always) private func ensureTexture(width: Int, height: Int) {
         if let tex = texture, tex.width == width, tex.height == height { return }
         let td = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba8Unorm,
@@ -67,7 +67,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         texture = device.makeTexture(descriptor: td)
     }
 
-    private func upload(framebuffer: Framebuffer) {
+    @inline(__always) private func upload(framebuffer: Framebuffer) {
         guard let tex = texture else { return }
         var fb = framebuffer
         fb.pixels.withUnsafeMutableBytes { raw in
@@ -81,9 +81,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { }
+    @inline(__always) func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { }
 
-    func draw(in view: MTKView) {
+    @inline(__always) func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable,
               let pass = view.currentRenderPassDescriptor,
               let cmd = queue.makeCommandBuffer(),
@@ -109,7 +109,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         cmd.commit()
     }
 
-    private func logUploadIfNeeded() {
+    @inline(__always) private func logUploadIfNeeded() {
         let now = CFAbsoluteTimeGetCurrent()
         if lastUploadLogTime == 0 {
             lastUploadLogTime = now

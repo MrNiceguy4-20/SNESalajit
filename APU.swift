@@ -1,6 +1,7 @@
 import Foundation
 
 final class APU {
+    var faultRecorder: FaultRecorder?
     private weak var bus: Bus?
     private var cpuToApu: [u8] = [0, 0, 0, 0]
     private var apuToCpu: [u8] = [0, 0, 0, 0]
@@ -288,13 +289,13 @@ if stubIPLZeroAckRequested && stubIPLZeroAckCountdown == 0 {
         portEventCount = min(portEventCount + 1, portEventRing.count)
     }
 
-    private func recentPortEvents() -> [APUHandshakeEvent] {
+    @inline(__always) private func recentPortEvents() -> [APUHandshakeEvent] {
         guard portEventCount > 0 else { return [] }
         let start = (portEventHead - portEventCount + portEventRing.count) % portEventRing.count
         return (0..<portEventCount).map { portEventRing[(start + $0) % portEventRing.count] }
     }
 
-    func debugSnapshot() -> APUDebugSnapshot {
+    @inline(__always) func debugSnapshot() -> APUDebugSnapshot {
         let reason: String
         switch spc.haltReason {
         case .none: reason = "none"
@@ -310,9 +311,9 @@ if stubIPLZeroAckRequested && stubIPLZeroAckCountdown == 0 {
         )
     }
 
-    func attach(bus: Bus) { self.bus = bus }
+    @inline(__always) func attach(bus: Bus) { self.bus = bus }
 
-    func reset() {
+    @inline(__always) func reset() {
         portEventHead = 0
         portEventCount = 0
         cpuToApu = [0, 0, 0, 0]
@@ -358,7 +359,7 @@ if stubIPLZeroAckRequested && stubIPLZeroAckCountdown == 0 {
         cpuToApuPendingMask = 0
     }
 
-    func step(masterCycles: Int) {
+    @inline(__always) func step(masterCycles: Int) {
         spcCycleAcc += masterCycles
         let cycles = spcCycleAcc / Self.masterCyclesPerSPC
         if cycles <= 0 { return }
@@ -383,9 +384,9 @@ if stubIPLZeroAckRequested && stubIPLZeroAckCountdown == 0 {
         if spc.halted { spc.resume() }
     }
 
-    func cpuReadPort(_ i: Int) -> u8 { apuToCpu[i & 3] }
+    @inline(__always) func cpuReadPort(_ i: Int) -> u8 { apuToCpu[i & 3] }
 
-    func cpuWritePort(_ i: Int, value: u8) {
+    @inline(__always) func cpuWritePort(_ i: Int, value: u8) {
         if iplEnabled && usingStubIPL && i == 0 {
             if value != 0x00 {
                 stubIPLSuppressPowerOnSignature = true
@@ -430,16 +431,16 @@ if stubIPLZeroAckRequested && stubIPLZeroAckCountdown == 0 {
         wakeSPCIfHalted()
     }
 
-    func apuReadPort(_ i: Int) -> u8 { cpuToApu[i & 3] }
+    @inline(__always) func apuReadPort(_ i: Int) -> u8 { cpuToApu[i & 3] }
 
-    func apuWritePort(_ i: Int, value: u8) {
+    @inline(__always) func apuWritePort(_ i: Int, value: u8) {
         let idx = i & 3
         apuToCpu[idx] = value
         lastApuToCpuWrite[idx] = value
         pushPortEvent(APUHandshakeEvent(direction: .apuToCpu, port: idx, value: value))
     }
 
-    func read8(_ addr: u16) -> u8 {
+    @inline(__always) func read8(_ addr: u16) -> u8 {
         let a = Int(addr)
         if iplEnabled && a >= IPLROM.base && a < (IPLROM.base + IPLROM.size) {
             return IPLROM.read(a)
@@ -454,7 +455,7 @@ if stubIPLZeroAckRequested && stubIPLZeroAckCountdown == 0 {
         }
     }
 
-    func write8(_ addr: u16, _ value: u8) {
+    @inline(__always) func write8(_ addr: u16, _ value: u8) {
         let a = Int(addr)
         switch a {
         case 0x00F4...0x00F7: apuWritePort(a - 0x00F4, value: value)
@@ -471,7 +472,7 @@ if stubIPLZeroAckRequested && stubIPLZeroAckCountdown == 0 {
         }
     }
 
-    func pullAudio(into buffer: inout [Int16]) {
+    @inline(__always) func pullAudio(into buffer: inout [Int16]) {
         audio.pull(into: &buffer)
     }
 }

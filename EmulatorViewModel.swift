@@ -26,11 +26,11 @@ final class EmulatorViewModel: ObservableObject {
 
     // MARK: - Debug window
 
-    func openDebugWindow() {
+    @inline(__always) func openDebugWindow() {
         DebugWindowController.shared.open(with: self)
     }
 
-    func makeDebugSnapshot() -> EmulatorDebugSnapshot {
+    @inline(__always) func makeDebugSnapshot() -> EmulatorDebugSnapshot {
         let cpu = emulator.cpu
         let bus = emulator.bus
         let ppu = emulator.ppu
@@ -39,6 +39,8 @@ final class EmulatorViewModel: ObservableObject {
         return EmulatorDebugSnapshot(
             wallClock: Date(),
             isRunning: isRunning,
+            romName: emulator.romName,
+            romSHA1: emulator.romSHA1,
             cpu: CPU65816DebugSnapshot(cpu: cpu),
             cpuLastInstruction: cpu.lastInstruction,
             cpuTrace: cpu.instructionTrace(),
@@ -46,11 +48,13 @@ final class EmulatorViewModel: ObservableObject {
             ppu: ppu.debugSnapshot(),
             ppuFramebufferSize: (ppu.framebuffer.width, ppu.framebuffer.height),
             spc: apu.debugSnapshot(),
-            recentLogs: Array(debugLines.suffix(200))
+            recentLogs: Array(debugLines.suffix(200)),
+            logs: Array(debugLines.suffix(200)),
+            
         )
     }
 
-    func makeFullDebugReport() -> String {
+    @inline(__always) func makeFullDebugReport() -> String {
         let s = makeDebugSnapshot()
         var out: [String] = []
         out.append("==== CPU ====")
@@ -70,7 +74,7 @@ final class EmulatorViewModel: ObservableObject {
         return out.joined(separator: "\n")
     }
 
-    func startIfNeeded() {
+    @inline(__always) func startIfNeeded() {
         timer?.invalidate()
         lastFrameTime = 0
         
@@ -87,23 +91,23 @@ final class EmulatorViewModel: ObservableObject {
         log("Display timer started")
     }
     
-    func stop() {
+    @inline(__always) func stop() {
         timer?.invalidate()
         timer = nil
     }
     
-    func toggleRun() {
+    @inline(__always) func toggleRun() {
         isRunning.toggle()
         if !isRunning { emulator.saveSRAM() }
         log("Emulator \(isRunning ? "resumed" : "paused")")
     }
     
-    func reset() {
+    @inline(__always) func reset() {
         emulator.reset()
         log("Reset emulator state")
     }
     
-    func pickROM() {
+    @inline(__always) func pickROM() {
         let panel = NSOpenPanel()
         
         panel.allowedContentTypes = [.data]
@@ -121,7 +125,7 @@ final class EmulatorViewModel: ObservableObject {
         }
     }
     
-    private func tick(inNow: CVTimeStamp, out: CVTimeStamp) {
+    @inline(__always) private func tick(inNow: CVTimeStamp, out: CVTimeStamp) {
         guard isRunning else { return }
         
         let hostTime = CFAbsoluteTimeGetCurrent()
@@ -138,7 +142,7 @@ final class EmulatorViewModel: ObservableObject {
         logFrameProgress(at: hostTime)
     }
     
-    private func logFrameProgress(at hostTime: CFTimeInterval) {
+    @inline(__always) private func logFrameProgress(at hostTime: CFTimeInterval) {
         if lastFrameLogTime == 0 {
             lastFrameLogTime = hostTime
             return
@@ -156,7 +160,7 @@ final class EmulatorViewModel: ObservableObject {
         lastFrameLogTime = hostTime
     }
 
-    private func log(_ message: String, level: LogLevel = .info) {
+    @inline(__always) private func log(_ message: String, level: LogLevel = .info) {
         guard level >= logLevel else { return }
         
         let timestamp = DateFormatter.cached.string(from: Date())

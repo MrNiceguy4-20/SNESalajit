@@ -6,7 +6,7 @@ enum ROMLoader {
         case tooSmall
     }
 
-    static func load(url: URL) throws -> Cartridge {
+    @inline(__always) static func load(url: URL) throws -> Cartridge {
         Log.info("Attempting to load ROM at path: \(url.path)")
 
         guard let data = try? Data(contentsOf: url) else {
@@ -14,8 +14,8 @@ enum ROMLoader {
             throw ROMError.unreadable
         }
 
-        var raw = [u8](data)
-        var rom = selectBestROMBytes(raw: raw)
+        let raw = [u8](data)
+        let rom = selectBestROMBytes(raw: raw)
 
         guard rom.count >= 0x10000 else {
             Log.warn("ROM is too small (\(rom.count) bytes) after normalization")
@@ -73,7 +73,7 @@ enum ROMLoader {
         return Cartridge(rom: rom, mapping: mapping, sramSizeBytes: sramSizeBytes)
     }
 
-    private static func isMappingSane(rom: [u8], mapping: Cartridge.Mapping, headerOffset: Int) -> Bool {
+    @inline(__always) private static func isMappingSane(rom: [u8], mapping: Cartridge.Mapping, headerOffset: Int) -> Bool {
         guard headerOffset >= 0, headerOffset + 0x40 <= rom.count else { return false }
 
         let rvLo = Int(rom[headerOffset + 0x3C])
@@ -111,7 +111,7 @@ enum ROMLoader {
         return true
     }
 
-    static func mappingPreferenceScore(rom: [u8], mapping: Cartridge.Mapping, headerOffset: Int) -> Int {
+    @inline(__always) static func mappingPreferenceScore(rom: [u8], mapping: Cartridge.Mapping, headerOffset: Int) -> Int {
         guard headerOffset >= 0, headerOffset + 0x40 <= rom.count else { return Int.min }
 
         var score = 0
@@ -146,7 +146,7 @@ enum ROMLoader {
         return score
     }
 
-    private static func selectBestROMBytes(raw: [u8]) -> [u8] {
+    @inline(__always) private static func selectBestROMBytes(raw: [u8]) -> [u8] {
         var bases: [[u8]] = [raw]
         if raw.count % 1024 == 512, raw.count > 512 {
             let stripped = Array(raw.dropFirst(512))
@@ -199,7 +199,7 @@ enum ROMLoader {
         return bestROM
     }
 
-    private static func pickBestROMVariant(rom: [u8]) -> [u8] {
+    @inline(__always) private static func pickBestROMVariant(rom: [u8]) -> [u8] {
         func bestScore(_ r: [u8]) -> Int {
             let lo = scoreHeader(rom: r, headerOffset: 0x7FC0, expected: .loROM)
             let hi = scoreHeader(rom: r, headerOffset: 0xFFC0, expected: .hiROM)
@@ -239,7 +239,7 @@ enum ROMLoader {
         return best
     }
 
-    private static func deinterleave(_ rom: [u8], chunkSize: Int, swapSize: Int) -> [u8] {
+    @inline(__always) private static func deinterleave(_ rom: [u8], chunkSize: Int, swapSize: Int) -> [u8] {
         guard chunkSize > 0, swapSize > 0, chunkSize == swapSize * 2 else { return rom }
         guard rom.count >= chunkSize else { return rom }
 
@@ -255,7 +255,7 @@ enum ROMLoader {
         return out
     }
 
-    private static func parseSRAMSizeBytes(rom: [u8], headerOffset: Int) -> Int {
+    @inline(__always) private static func parseSRAMSizeBytes(rom: [u8], headerOffset: Int) -> Int {
         guard headerOffset + 0x18 < rom.count else { return 0 }
         let v = Int(rom[headerOffset + 0x18] & 0x0F)
         if v == 0 { return 0 }
@@ -263,7 +263,7 @@ enum ROMLoader {
         return kb * 1024
     }
 
-    private static func scoreHeader(rom: [u8], headerOffset: Int, expected: Cartridge.Mapping) -> Int {
+    @inline(__always) private static func scoreHeader(rom: [u8], headerOffset: Int, expected: Cartridge.Mapping) -> Int {
         guard headerOffset + 0x40 <= rom.count else { return -9999 }
 
         var titleScore = 0

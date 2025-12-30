@@ -20,7 +20,7 @@ final class InterruptController {
     private var recentEvents: [String] = []
     private let maxRecentEvents: Int = 200
 
-    func reset() {
+    @inline(__always) func reset() {
         nmiEnable = false
         hIrqEnable = false
         vIrqEnable = false
@@ -36,7 +36,7 @@ final class InterruptController {
         pushEvent("[SL:0 DOT:0] [reset] NMI/HV/AutoJoy cleared")
     }
 
-    func onEnterVBlank(dot: Int, scanline: Int) {
+    @inline(__always) func onEnterVBlank(dot: Int, scanline: Int) {
         rdnmi |= 0x80
         pushEvent(dot: dot, scanline: scanline, "VBlank enter → RDNMI bit7 set (RDNMI=\(hex8(rdnmi)))")
         if nmiEnable {
@@ -46,7 +46,7 @@ final class InterruptController {
         }
     }
 
-    func onLeaveVBlank(dot: Int, scanline: Int) {
+    @inline(__always) func onLeaveVBlank(dot: Int, scanline: Int) {
         if nmiLine {
             pushEvent(dot: dot, scanline: scanline, "NMI line ↓ (VBlank leave)")
         }
@@ -54,7 +54,7 @@ final class InterruptController {
         pushEvent(dot: dot, scanline: scanline, "VBlank leave")
     }
 
-    func pollHVMatch(dot: Int, scanline: Int) {
+    @inline(__always) func pollHVMatch(dot: Int, scanline: Int) {
         let match: Bool
         if hIrqEnable && vIrqEnable {
             match = (scanline == vTime) && (dot == hTime)
@@ -75,7 +75,7 @@ final class InterruptController {
         }
     }
 
-    func setNMITIMEN(_ value: u8, video: VideoTiming, dot: Int, scanline: Int) {
+    @inline(__always) func setNMITIMEN(_ value: u8, video: VideoTiming, dot: Int, scanline: Int) {
         nmitimen = value
         let newNMIEnable = (value & 0x80) != 0
         let newVIRQEnable = (value & 0x20) != 0
@@ -108,7 +108,7 @@ final class InterruptController {
         autoJoypadEnable = newAutoJoyEnable
     }
 
-    func reapplyLatchedNMITIMEN(dot: Int, scanline: Int) {
+    @inline(__always) func reapplyLatchedNMITIMEN(dot: Int, scanline: Int) {
         let value = nmitimen
         nmiEnable = (value & 0x80) != 0
         vIrqEnable = (value & 0x20) != 0
@@ -116,14 +116,14 @@ final class InterruptController {
         autoJoypadEnable = (value & 0x01) != 0
     }
     
-    func clearIRQLine(dot: Int, scanline: Int) {
+    @inline(__always) func clearIRQLine(dot: Int, scanline: Int) {
         if irqLine {
             pushEvent(dot: dot, scanline: scanline, "IRQ line ↓ (manual clear)")
         }
         irqLine = false
     }
 
-    func readRDNMI(dot: Int, scanline: Int) -> u8 {
+    @inline(__always) func readRDNMI(dot: Int, scanline: Int) -> u8 {
         let v = rdnmi
         rdnmi &= 0x7F
         if (v & 0x80) != 0 {
@@ -135,7 +135,7 @@ final class InterruptController {
         return v
     }
 
-    func readTIMEUP(dot: Int, scanline: Int) -> u8 {
+    @inline(__always) func readTIMEUP(dot: Int, scanline: Int) -> u8 {
         let v = timeup
         timeup &= 0x7F
         if (v & 0x80) != 0 {
@@ -147,7 +147,7 @@ final class InterruptController {
         return v
     }
 
-    func logHVBJOYRead(value: u8, dot: Int, scanline: Int) {
+    @inline(__always) func logHVBJOYRead(value: u8, dot: Int, scanline: Int) {
         pushEvent(dot: dot, scanline: scanline, "HVBJOY read → \(hex8(value))")
     }
 
@@ -165,7 +165,7 @@ final class InterruptController {
         let recentEvents: [String]
     }
 
-    func debugSnapshot() -> InterruptDebugState {
+    @inline(__always) func debugSnapshot() -> InterruptDebugState {
         InterruptDebugState(
             nmiEnable: nmiEnable,
             hIrqEnable: hIrqEnable,
@@ -181,18 +181,18 @@ final class InterruptController {
         )
     }
 
-    private func pushEvent(dot: Int, scanline: Int, _ message: String) {
+    @inline(__always) private func pushEvent(dot: Int, scanline: Int, _ message: String) {
         pushEvent("[SL:\(scanline) DOT:\(dot)] \(message)")
     }
 
-    private func pushEvent(_ message: String) {
+    @inline(__always) private func pushEvent(_ message: String) {
         recentEvents.append(message)
         if recentEvents.count > maxRecentEvents {
             recentEvents.removeFirst(recentEvents.count - maxRecentEvents)
         }
     }
 
-    private func hex8(_ v: u8) -> String {
+    @inline(__always) private func hex8(_ v: u8) -> String {
         String(format: "$%02X", Int(v))
     }
 }

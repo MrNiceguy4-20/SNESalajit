@@ -17,14 +17,14 @@ final class SPC700 {
     static let Z: u8 = 0x02
     static let C: u8 = 0x01
 
-    func reset() {
+    @inline(__always) func reset() {
         a = 0; x = 0; y = 0
         sp = 0xEF
         pc = 0xFFC0
         psw = 0x02
     }
 
-    func step(cycles: Int) {}
+    @inline(__always) func step(cycles: Int) {}
     
     enum HaltReason { case none, sleep, stop }
     var haltReason: HaltReason = .none

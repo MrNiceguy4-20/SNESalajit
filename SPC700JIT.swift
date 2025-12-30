@@ -11,12 +11,12 @@ final class SPC700JIT {
 
     var enabled: Bool = false
 
-    func reset() {
+    @inline(__always) func reset() {
         blocks.removeAll(keepingCapacity: true)
         mem.reset()
     }
 
-    private func compileBlock(startPC: u16) -> UnsafeRawPointer? {
+    @inline(__always) private func compileBlock(startPC: u16) -> UnsafeRawPointer? {
         var code: [UInt8] = []
         code += asm.movRCX_RDX()
         code += asm.movRDX(imm64: UInt64(startPC))
@@ -26,7 +26,7 @@ final class SPC700JIT {
         return mem.append(code)
     }
 
-    private func getBlock(pc: u16) -> UnsafeRawPointer? {
+    @inline(__always) private func getBlock(pc: u16) -> UnsafeRawPointer? {
         if let b = blocks[pc] { return b }
         guard let b = compileBlock(startPC: pc) else { return nil }
         blocks[pc] = b
@@ -43,7 +43,7 @@ final class SPC700JIT {
         u16(truncatingIfNeeded: UInt32(truncatingIfNeeded: packed >> 32))
     }
 
-    func run(cpu: SPC700, apu: APU, interpreter: SPC700Interpreter, cycles: Int) {
+    @inline(__always) func run(cpu: SPC700, apu: APU, interpreter: SPC700Interpreter, cycles: Int) {
         guard cycles > 0 else { return }
         if cpu.halted { return }
 
@@ -76,7 +76,7 @@ final class SPC700JIT {
     }
 }
 
-private let spc700jit_execHotBlock_ptr: UnsafeMutableRawPointer = {
+@inline(__always) private let spc700jit_execHotBlock_ptr: UnsafeMutableRawPointer = {
     unsafeBitCast(
         spc700jit_execHotBlock as (@convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, u16, Int32) -> UInt64),
         to: UnsafeMutableRawPointer.self
@@ -90,7 +90,7 @@ private func spc700jit_pack(nextPC: u16, remaining: Int) -> UInt64 {
 }
 
 @_cdecl("spc700jit_execHotBlock")
-func spc700jit_execHotBlock(
+@inline(__always) func spc700jit_execHotBlock(
     _ cpuPtr: UnsafeMutableRawPointer?,
     _ apuPtr: UnsafeMutableRawPointer?,
     _ startPC: u16,

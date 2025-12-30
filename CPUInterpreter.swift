@@ -4,12 +4,12 @@ final class CPUInterpreter {
     private var cycleDebt: Int = 0
     private var nmiLatched: Bool = false
 
-    func reset() {
+    @inline(__always) func reset() {
         cycleDebt = 0
         nmiLatched = false
     }
 
-    func step(cpu: CPU65816, bus: Bus, cycles: Int) {
+    @inline(__always) func step(cpu: CPU65816, bus: Bus, cycles: Int) {
         if cpu.isWaiting && !cpu.nmiPending && !cpu.irqLine {
             return
         }

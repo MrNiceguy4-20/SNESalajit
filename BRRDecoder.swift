@@ -1,7 +1,7 @@
 import Foundation
 
 struct BRRDecoder {
-    static func decodeBlock(header: u8, data: [u8], prev1: inout Int, prev2: inout Int) -> [Int] {
+    @inline(__always) static func decodeBlock(header: u8, data: [u8], prev1: inout Int, prev2: inout Int) -> [Int] {
         let shift = Int(header >> 4)
         let filter = (header >> 2) & 0x03
         var out: [Int] = []

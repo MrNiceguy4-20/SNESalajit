@@ -20,7 +20,7 @@ final class Cartridge {
         self.sram = sramSizeBytes > 0 ? Array(repeating: 0x00, count: sramSizeBytes) : []
     }
 
-        func read8(bank: u8, addr: u16) -> u8 {
+    @inline(__always) func read8(bank: u8, addr: u16) -> u8 {
         if isSRAM(bank: bank, addr: addr) {
             let off = sramOffset(bank: bank, addr: addr)
             if off >= 0 && off < sram.count { return sram[off] }
@@ -34,14 +34,14 @@ final class Cartridge {
     }
 
 
-    func write8(bank: u8, addr: u16, value: u8) {
+    @inline(__always) func write8(bank: u8, addr: u16, value: u8) {
         guard hasSRAM, isSRAM(bank: bank, addr: addr) else { return }
         let off = sramOffset(bank: bank, addr: addr)
         guard off >= 0 && off < sram.count else { return }
         sram[off] = value
     }
 
-        func romOffset(bank: u8, addr: u16) -> Int? {
+    @inline(__always) func romOffset(bank: u8, addr: u16) -> Int? {
         let b = Int(bank)
         if b == 0x7E || b == 0x7F { return nil }
 
@@ -73,7 +73,7 @@ final class Cartridge {
     }
 
 
-    private func isSRAM(bank: u8, addr: u16) -> Bool {
+    @inline(__always) private func isSRAM(bank: u8, addr: u16) -> Bool {
         let b = Int(bank)
         switch mapping {
         case .loROM:
@@ -85,7 +85,7 @@ final class Cartridge {
         }
     }
 
-    private func sramOffset(bank: u8, addr: u16) -> Int {
+    @inline(__always) private func sramOffset(bank: u8, addr: u16) -> Int {
         let b = Int(bank)
         switch mapping {
         case .loROM:
@@ -97,7 +97,7 @@ final class Cartridge {
         }
     }
 
-    func loadSRAM(_ data: [u8]) {
+    @inline(__always) func loadSRAM(_ data: [u8]) {
         guard hasSRAM else { return }
         let count = min(data.count, sram.count)
         for i in 0..<count {
@@ -105,7 +105,7 @@ final class Cartridge {
         }
     }
 
-    func serializeSRAM() -> [u8]? {
+    @inline(__always) func serializeSRAM() -> [u8]? {
         guard hasSRAM else { return nil }
         return sram
     }

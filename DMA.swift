@@ -23,7 +23,7 @@ final class DMAEngine {
         let channels: [DMAChannelDebugState]
     }
 
-    func debugSnapshot() -> DMADebugState {
+    @inline(__always) func debugSnapshot() -> DMADebugState {
         let chs = channels.enumerated().map { (i, c) in
             DMAChannelDebugState(
                 index: i,
@@ -49,11 +49,11 @@ final class DMAEngine {
     private static let masterCyclesPerByte: Int = 8
     private static let masterCyclesPerChannelOverhead: Int = 8
 
-    func reset() {
+    @inline(__always) func reset() {
         for i in 0..<8 { channels[i].reset() }
     }
 
-    func readReg(channel: Int, reg: Int) -> u8 {
+    @inline(__always) func readReg(channel: Int, reg: Int) -> u8 {
         let ch = channels[channel]
         switch reg {
         case 0x0: return ch.dmap
@@ -71,7 +71,7 @@ final class DMAEngine {
         }
     }
 
-    func writeReg(channel: Int, reg: Int, value: u8) {
+    @inline(__always) func writeReg(channel: Int, reg: Int, value: u8) {
         switch reg {
         case 0x0: channels[channel].dmap = value
         case 0x1: channels[channel].bbad = value
@@ -103,7 +103,7 @@ final class DMAEngine {
         return (totalBytes * DMAEngine.masterCyclesPerByte) + (channelsRun * DMAEngine.masterCyclesPerChannelOverhead)
     }
 
-    private func runChannel(_ idx: Int, bus: Bus) -> Int {
+    @inline(__always) private func runChannel(_ idx: Int, bus: Bus) -> Int {
         var ch = channels[idx]
         let mode = ch.transferMode
         let dirBtoA = ch.directionBtoA
@@ -121,10 +121,10 @@ final class DMAEngine {
                 let bOffset = (u16(ch.bbad) &+ u16(off)) & 0x00FF
                 let b = u16(0x2100) &+ bOffset
                 if dirBtoA {
-                    let v = bus.read8_mmio(b)
+                    let v = bus.read8_mmio(b, source: .dma)
                     let bank = ch.a1b
                     let addr = ch.a1t
-                    bus.write8(bank: bank, addr: addr, value: v)
+                    bus.write8(bank: bank, addr: addr, value: v, source: .dma)
                 } else {
                     let bank = ch.a1b
                     let addr = ch.a1t
@@ -132,7 +132,7 @@ final class DMAEngine {
                     if v != 0 {
                         Log.debug("DMA write non-zero: $\(Hex.u8(v)) from $\(Hex.u8(bank)):\(Hex.u16(addr))")
                     }
-                    bus.write8_mmio(b, value: v)
+                    bus.write8_mmio(b, value: v, source: .dma)
                 }
 
                 transferred += 1
@@ -147,7 +147,7 @@ final class DMAEngine {
         return transferred
     }
 
-    func hdmaInit(mask: u8, bus: Bus) {
+    @inline(__always) func hdmaInit(mask: u8, bus: Bus) {
         _ = bus
         for ch in 0..<8 {
             if (mask & (1 << ch)) == 0 { continue }
@@ -160,7 +160,7 @@ final class DMAEngine {
         }
     }
 
-    func hdmaStep(mask: u8, bus: Bus) {
+    @inline(__always) func hdmaStep(mask: u8, bus: Bus) {
         for ch in 0..<8 {
             if (mask & (1 << ch)) == 0 { continue }
             var c = channels[ch]
@@ -200,7 +200,7 @@ final class DMAEngine {
                     c.hdmaTableAddr &+= 1
                     let bOffset = (u16(c.bbad) &+ u16(off)) & 0x00FF
                     let b = u16(0x2100) &+ bOffset
-                    bus.write8_mmio(b, value: data)
+                    bus.write8_mmio(b, value: data, source: .dma)
                 }
             }
 
@@ -212,7 +212,7 @@ final class DMAEngine {
         }
     }
 
-    private static func transferOffsets(for mode: Int) -> [Int] {
+    @inline(__always) private static func transferOffsets(for mode: Int) -> [Int] {
         switch mode & 7 {
         case 0: return [0]
         case 1: return [0, 1]

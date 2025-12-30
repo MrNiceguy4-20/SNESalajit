@@ -62,7 +62,7 @@ final class SPC700Interpreter {
         return (addr, bit)
     }
     
-    func step(cpu: SPC700, apu: APU, cycles: Int) {
+    @inline(__always) func step(cpu: SPC700, apu: APU, cycles: Int) {
         var debt = cycles
         while debt > 0 {
             let stubCost = apu.stepStubIPL(cpu)

@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 @MainActor
 final class DebugViewModel: ObservableObject {
     @Published private(set) var snapshot: EmulatorDebugSnapshot
+    @Published private(set) var diffText: String = ""
+    private var previousSnapshot: EmulatorDebugSnapshot? = nil
 
     private unowned let emulatorVM: EmulatorViewModel
     private var timerCancellable: AnyCancellable?
@@ -13,6 +15,8 @@ final class DebugViewModel: ObservableObject {
     init(emulatorVM: EmulatorViewModel) {
         self.emulatorVM = emulatorVM
         self.snapshot = emulatorVM.makeDebugSnapshot()
+        self.previousSnapshot = self.snapshot
+        self.diffText = "<no previous snapshot>"
         start()
     }
 
@@ -20,13 +24,43 @@ final class DebugViewModel: ObservableObject {
         timerCancellable?.cancel()
     }
 
-    func refreshNow() {
+    @inline(__always) func refreshNow() {
         snapshot = emulatorVM.makeDebugSnapshot()
+    }
+
+    private static func computeDiff(prev: EmulatorDebugSnapshot, now: EmulatorDebugSnapshot) -> String {
+        var out: [String] = []
+
+        // CPU diffs
+        let a = prev.cpu, b = now.cpu
+        if a.a != b.a || a.x != b.x || a.y != b.y || a.sp != b.sp || a.dp != b.dp || a.db != b.db || a.pb != b.pb || a.pc != b.pc || a.p != b.p {
+            out.append("CPU: A \(Hex.u16(a.a))→\(Hex.u16(b.a))  X \(Hex.u16(a.x))→\(Hex.u16(b.x))  Y \(Hex.u16(a.y))→\(Hex.u16(b.y))")
+            out.append("     PB:PC \(Hex.u24(bank: a.pb, addr: a.pc))→\(Hex.u24(bank: b.pb, addr: b.pc))  SP \(Hex.u16(a.sp))→\(Hex.u16(b.sp))  DP \(Hex.u16(a.dp))→\(Hex.u16(b.dp))  DB \(Hex.u8(a.db))→\(Hex.u8(b.db))  P \(Hex.u8(a.p))→\(Hex.u8(b.p))")
+        }
+
+        // IRQ/NMI line changes
+        if prev.bus.nmiLine != now.bus.nmiLine || prev.bus.irqLine != now.bus.irqLine {
+            out.append("Lines: NMI \(prev.bus.nmiLine)→\(now.bus.nmiLine)  IRQ \(prev.bus.irqLine)→\(now.bus.irqLine)")
+        }
+
+        // DMA enable changes
+        if prev.bus.mdmaEnabled != now.bus.mdmaEnabled || prev.bus.hdmaEnabled != now.bus.hdmaEnabled {
+            out.append("DMA: MDMAEN \(Hex.u8(prev.bus.mdmaEnabled))→\(Hex.u8(now.bus.mdmaEnabled))  HDMAEN \(Hex.u8(prev.bus.hdmaEnabled))→\(Hex.u8(now.bus.hdmaEnabled))")
+        }
+
+        // Fault changes
+        let pf = prev.bus.lastFault?.message
+        let nf = now.bus.lastFault?.message
+        if pf != nf, let nf {
+            out.append("Fault: \(nf)")
+        }
+
+        return out.isEmpty ? "<no changes detected>" : out.joined(separator: "\n")
     }
 
     // MARK: - Save Snapshot
 
-    func saveSnapshot() {
+    @inline(__always) func saveSnapshot() {
         let text = makeWindowFormattedDebugReport()
 
         let panel = NSSavePanel()
@@ -40,14 +74,24 @@ final class DebugViewModel: ObservableObject {
 
     // MARK: - Window-Formatted Export
 
-    func makeWindowFormattedDebugReport() -> String {
+    @inline(__always)     func makeWindowFormattedDebugReport() -> String {
         var out: [String] = []
+
+        out.append("==== REPRO / CONTEXT ====")
+        out.append(reproHeaderText)
+        out.append("")
+        out.append("==== CHANGES SINCE LAST REFRESH ====")
+        out.append(diffText)
+        out.append("")
+        out.append("==== LAST FAULT ====")
+        out.append(faultText)
+        out.append("")
 
         out.append("==== CPU ====")
         out.append(cpuText)
         out.append("")
 
-        out.append("==== CPU TRACE ====")
+        out.append("==== CPU TRACE (WITH REGS) ====")
         out.append(cpuTraceText)
         out.append("")
 
@@ -55,16 +99,24 @@ final class DebugViewModel: ObservableObject {
         out.append(busText)
         out.append("")
 
+        out.append("==== BUS TRANSACTIONS (LAST 200) ====")
+        out.append(busTransactionsText)
+        out.append("")
+
+        out.append("==== IO WRITE HISTORY (PPU/IRQ/DMA/APU) ====")
+        out.append(ioWriteHistoryText)
+        out.append("")
+
         out.append("==== IRQ / NMI TRACE ====")
         out.append(irqTraceText)
         out.append("")
 
-        out.append("==== APU HANDSHAKE ====")
-        out.append(apuHandshakeText)
+        out.append("==== APU / SPC ====")
+        out.append(apuText)
         out.append("")
 
-        out.append("==== APU/SPC700 ====")
-        out.append(apuText)
+        out.append("==== APU HANDSHAKE ====")
+        out.append(apuHandshakeText)
         out.append("")
 
         out.append("==== PPU ====")
@@ -73,11 +125,103 @@ final class DebugViewModel: ObservableObject {
 
         out.append("==== PPU TRACE ====")
         out.append(ppuTraceText)
+        out.append("")
+
+        out.append("==== RECENT LOGS ====")
+        out.append(logsText)
 
         return out.joined(separator: "\n")
+
+
     }
 
     // MARK: - Formatted Debug Sections
+
+    var logsText: String {
+        let lines = snapshot.logs
+        return lines.isEmpty ? "<none>" : lines.joined(separator: "\n")
+    }
+    
+    var reproHeaderText: String {
+        let s = snapshot
+        let b = s.bus
+        var out: [String] = []
+        out.append("WallClock: \(s.wallClock)")
+        out.append("Running: \(s.isRunning)")
+        if let name = s.romName { out.append("ROM: \(name)") }
+        if let sha1 = s.romSHA1 { out.append("SHA1: \(sha1)") }
+        out.append("Cartridge mapping: \(String(describing: b.cartridgeMapping))")
+        if let ov = b.vectorMappingOverride {
+            out.append("Vector mapping override: \(String(describing: ov))")
+        }
+        out.append("MasterCycles: \(b.masterCycleCounter)")
+        return out.joined(separator: "\n")
+    }
+
+    var faultText: String {
+        guard let f = snapshot.bus.lastFault else { return "<none>" }
+        var out: [String] = []
+        out.append("\(f.component): \(f.message)")
+        if let pc = f.pc24 {
+            out.append("PC: \(String(format: "$%06X", pc))")
+        }
+        if let c = f.masterCycle {
+            out.append("MasterCycle: \(c)")
+        }
+        if let sl = f.scanline, let dot = f.dot {
+            out.append("Video: scanline \(sl) dot \(dot)")
+        }
+        out.append("At: \(f.wallClock)")
+        return out.joined(separator: "\n")
+    }
+
+    var busTransactionsText: String {
+        let tx = snapshot.bus.transactions
+        if tx.isEmpty { return "<none>" }
+        var out: [String] = []
+        for t in tx.suffix(200) {
+            let pc = t.cpuPC24.map { String(format: "$%06X", $0) } ?? "------"
+            let rw = t.isWrite ? "W" : "R"
+            out.append(String(format: "%10llu  %3d:%3d  %@ %@  %02X:%04X = %02X  PC %@",
+                              t.masterCycle, t.scanline, t.dot,
+                              t.source.rawValue, rw,
+                              t.bank, t.addr, t.value, pc))
+        }
+        return out.joined(separator: "\n")
+    }
+
+    var ioWriteHistoryText: String {
+        let tx = snapshot.bus.transactions.filter { $0.isWrite }
+        if tx.isEmpty { return "<none>" }
+        func isPPU(_ a: u16) -> Bool { a >= 0x2100 && a <= 0x21FF }
+        func isIRQ(_ a: u16) -> Bool { a >= 0x4200 && a <= 0x421F }
+        func isDMA(_ a: u16) -> Bool { a >= 0x4300 && a <= 0x437F }
+        func isAPU(_ a: u16) -> Bool { a >= 0x2140 && a <= 0x2143 }
+
+        let ppu = tx.filter { $0.bank == 0x00 && isPPU($0.addr) }.suffix(64)
+        let irq = tx.filter { $0.bank == 0x00 && isIRQ($0.addr) }.suffix(64)
+        let dma = tx.filter { $0.bank == 0x00 && isDMA($0.addr) }.suffix(64)
+        let apu = tx.filter { $0.bank == 0x00 && isAPU($0.addr) }.suffix(64)
+
+        var out: [String] = []
+        func emit(_ title: String, _ list: ArraySlice<Bus.BusTransaction>) {
+            out.append("-- \(title) --")
+            if list.isEmpty { out.append("<none>"); return }
+            for t in list {
+                let pc = t.cpuPC24.map { String(format: "$%06X", $0) } ?? "------"
+                out.append(String(format: "%10llu  %@  %02X:%04X = %02X  PC %@",
+                                  t.masterCycle, t.source.rawValue, t.bank, t.addr, t.value, pc))
+            }
+        }
+        emit("PPU $2100-$21FF", ppu)
+        out.append("")
+        emit("IRQ/TIMING $4200-$421F", irq)
+        out.append("")
+        emit("DMA $4300-$437F", dma)
+        out.append("")
+        emit("APU PORTS $2140-$2143", apu)
+        return out.joined(separator: "\n")
+    }
 
     var cpuText: String {
         let s = snapshot
@@ -99,7 +243,13 @@ E   \(s.cpu.emulationMode ? 1 : 0)   M \(s.cpu.mem8 ? 1 : 0)   X \(s.cpu.index8 
 
         for e in snapshot.cpuTrace.suffix(200) {
             let bytes = e.bytes.prefix(4).map { Hex.u8($0) }.joined(separator: " ")
-            out.append("\(Hex.u24(bank: e.pb, addr: e.pc))  \(bytes)  \(e.text)")
+            out.append(String(format: "%@  %@  %@  | A=%@ X=%@ Y=%@ SP=%@ DP=%@ DB=%@ P=%@ E=%@ M=%@ X=%@  cyc=%llu",
+                              Hex.u24(bank: e.pb, addr: e.pc),
+                              bytes,
+                              e.text,
+                              Hex.u16(e.a), Hex.u16(e.x), Hex.u16(e.y), Hex.u16(e.sp), Hex.u16(e.dp), Hex.u8(e.db), Hex.u8(e.p),
+                              e.emulationMode ? "1" : "0", e.mem8 ? "1" : "0", e.index8 ? "1" : "0",
+                              e.masterCycle))
         }
 
         return out.joined(separator: "\n")
@@ -183,7 +333,7 @@ Framebuffer \(p.framebufferWidth)x\(p.framebufferHeight)
 
     // MARK: - Timer
 
-    func start() {
+    @inline(__always) func start() {
         timerCancellable?.cancel()
         timerCancellable = Timer.publish(every: 0.10, on: .main, in: .common)
             .autoconnect()

@@ -7,7 +7,7 @@ struct MetalEmulatorView: NSViewRepresentable {
 
     typealias NSViewType = NSView
 
-    func makeNSView(context: Context) -> NSView {
+    @inline(__always) func makeNSView(context: Context) -> NSView {
         guard let device = MTLCreateSystemDefaultDevice() else {
             return MetalUnavailableView.make(message: "Metal is unavailable on this device.")
         }
@@ -27,13 +27,13 @@ struct MetalEmulatorView: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    @inline(__always) func updateNSView(_ nsView: NSView, context: Context) {
         guard let mtkView = nsView as? MTKView else { return }
         context.coordinator.renderer?.update(framebuffer: framebuffer)
         mtkView.isPaused = false
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    @inline(__always) func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator {
         var renderer: MetalRenderer?
@@ -41,7 +41,7 @@ struct MetalEmulatorView: NSViewRepresentable {
 }
 
 private enum MetalUnavailableView {
-    static func make(message: String) -> NSView {
+    @inline(__always) static func make(message: String) -> NSView {
         let container = NSView()
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor.black.cgColor

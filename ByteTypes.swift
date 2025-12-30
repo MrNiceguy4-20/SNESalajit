@@ -13,7 +13,7 @@ typealias i32 = Int32
 
 extension UInt32 {
 
-    static func rgba(_ r: u8, _ g: u8, _ b: u8, _ a: u8 = 0xFF) -> UInt32 {
+    @inline(__always) static func rgba(_ r: u8, _ g: u8, _ b: u8, _ a: u8 = 0xFF) -> UInt32 {
         (UInt32(a) << 24) | (UInt32(b) << 16) | (UInt32(g) << 8) | UInt32(r)
     }
 }

@@ -32,7 +32,7 @@ final class DSPVoice {
     private(set) var endHitThisSample: Bool = false
     var noiseEnabled: Bool = false
 
-    func keyOn(sampleAddr: Int) {
+    @inline(__always) func keyOn(sampleAddr: Int) {
         self.sampleAddr = sampleAddr
         self.loopAddr = sampleAddr
         active = true
@@ -49,11 +49,11 @@ final class DSPVoice {
         envCounter = 0
     }
 
-    func keyOff() {
+    @inline(__always) func keyOff() {
         if envState != .off { envState = .release }
     }
 
-    private func clockEnvelope() {
+    @inline(__always) private func clockEnvelope() {
         envCounter += 1
         if envCounter < Self.envPeriod { return }
         envCounter = 0
@@ -84,7 +84,7 @@ final class DSPVoice {
         }
     }
 
-    func nextSample(read: (Int)->u8, pitchDelta: Int = 0, noiseSample: Int = 0) -> Int {
+    @inline(__always) func nextSample(read: (Int)->u8, pitchDelta: Int = 0, noiseSample: Int = 0) -> Int {
         endHitThisSample = false
         guard active else { return 0 }
 

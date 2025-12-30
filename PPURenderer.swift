@@ -1,7 +1,7 @@
 import Foundation
 
 final class PPURenderer {
-    func renderFrame(regs: PPURegisters, mem: PPUMemory) -> Framebuffer {
+    @inline(__always) func renderFrame(regs: PPURegisters, mem: PPUMemory) -> Framebuffer {
         var fb = Framebuffer(width: 256, height: 224, fill: 0x000000FF)
 
         if regs.forcedBlank {
@@ -28,7 +28,7 @@ final class PPURenderer {
         let bgr555: u16
     }
 
-    private func renderMode1_BG123_4bpp(regs: PPURegisters, mem: PPUMemory, fb: inout Framebuffer, backdropBGR: u16) {
+    @inline(__always) private func renderMode1_BG123_4bpp(regs: PPURegisters, mem: PPUMemory, fb: inout Framebuffer, backdropBGR: u16) {
         let (bg1W, bg1H) = bgMapTileDimensions(sizeBits: regs.bg1ScreenSize)
         let (bg2W, bg2H) = bgMapTileDimensions(sizeBits: regs.bg2ScreenSize)
         let (bg3W, bg3H) = bgMapTileDimensions(sizeBits: regs.bg3ScreenSize)
@@ -132,7 +132,7 @@ final class PPURenderer {
         return a
     }
 
-    private func fetchBG4bppCandidate(
+    @inline(__always) private func fetchBG4bppCandidate(
         layer: PPURegisters.Layer,
         basePriority: Int,
         tilemapBase: Int,
@@ -174,7 +174,7 @@ final class PPURenderer {
         return Candidate(priority: prio, layer: layer, bgr555: bgr)
     }
 
-    private func bgMapTileDimensions(sizeBits: u8) -> (w: Int, h: Int) {
+    @inline(__always) private func bgMapTileDimensions(sizeBits: u8) -> (w: Int, h: Int) {
         switch sizeBits & 0x03 {
         case 0: return (32, 32)
         case 1: return (64, 32)
@@ -184,7 +184,7 @@ final class PPURenderer {
         }
     }
 
-    private func bgEntryAddress(tilemapBase: Int, tileX: Int, tileY: Int, mapW: Int, mapH: Int) -> Int {
+    @inline(__always) private func bgEntryAddress(tilemapBase: Int, tileX: Int, tileY: Int, mapW: Int, mapH: Int) -> Int {
         let screensX = max(1, mapW / 32)
         let screensY = max(1, mapH / 32)
 
@@ -200,7 +200,7 @@ final class PPURenderer {
         return screenBase + entryIndex * 2
     }
 
-    private func fetch4bppPixel(tileDataBase: Int, tileNum: Int, x: Int, y: Int, mem: PPUMemory) -> Int {
+    @inline(__always) private func fetch4bppPixel(tileDataBase: Int, tileNum: Int, x: Int, y: Int, mem: PPUMemory) -> Int {
         let tileBase = tileDataBase + tileNum * 32
         let rowBase = tileBase + y * 2
         let p0 = mem.readVRAMByte(rowBase + 0)

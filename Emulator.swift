@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Combine
 
 final class Emulator {
@@ -10,6 +11,8 @@ final class Emulator {
     @Published var framebuffer: Framebuffer?
     private let clock = MasterClock()
     private var romURL: URL?
+    private(set) var romName: String?
+    private(set) var romSHA1: String?
 
     init() {
         cpu.attach(bus: bus)
@@ -24,7 +27,7 @@ final class Emulator {
         reset()
     }
 
-    func reset() {
+    @inline(__always) func reset() {
         irq.reset()
         clock.reset()
         bus.reset()
@@ -32,22 +35,29 @@ final class Emulator {
         cpu.reset()
     }
 
-    func loadROM(url: URL) throws {
+    @inline(__always) func loadROM(url: URL) throws {
         saveSRAM()
 
         let cart = try ROMLoader.load(url: url)
         romURL = url
+        romName = url.lastPathComponent
+        if let data = try? Data(contentsOf: url) {
+            let digest = Insecure.SHA1.hash(data: data)
+            romSHA1 = digest.map { String(format: "%02x", $0) }.joined()
+        } else {
+            romSHA1 = nil
+        }
         loadSRAMIfPresent(for: cart)
         bus.insertCartridge(cart)
         reset()
     }
 
-    func step(seconds: Double) {
+    @inline(__always) func step(seconds: Double) {
         let cyclesToRun = Int(MasterClock.masterHz * seconds)
         step(masterCycles: cyclesToRun)
     }
 
-    func step(masterCycles: Int) {
+    @inline(__always) func step(masterCycles: Int) {
         var remaining = masterCycles
 
         while remaining > 0 {
@@ -83,13 +93,13 @@ final class Emulator {
         }
     }
 
-    func submitFrame(_ fb: Framebuffer) {
+    @inline(__always) func submitFrame(_ fb: Framebuffer) {
         DispatchQueue.main.async {
             self.framebuffer = fb
         }
     }
 
-    func saveSRAM() {
+    @inline(__always) func saveSRAM() {
         guard let cart = bus.cartridge, cart.hasSRAM, let saveURL = saveFileURL else { return }
         guard let bytes = cart.serializeSRAM() else { return }
 
@@ -101,7 +111,7 @@ final class Emulator {
         }
     }
 
-    private func loadSRAMIfPresent(for cart: Cartridge) {
+    @inline(__always) private func loadSRAMIfPresent(for cart: Cartridge) {
         guard cart.hasSRAM, let saveURL = saveFileURL else { return }
         guard let data = try? Data(contentsOf: saveURL) else { return }
 
@@ -110,7 +120,7 @@ final class Emulator {
         Log.info(String(format: "Loaded %d bytes of SRAM from %@", slice.count, saveURL.lastPathComponent))
     }
 
-    private var saveFileURL: URL? {
+    @inline(__always) private var saveFileURL: URL? {
         guard let romURL else { return nil }
         return romURL.deletingPathExtension().appendingPathExtension("srm")
     }

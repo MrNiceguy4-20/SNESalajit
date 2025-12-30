@@ -8,7 +8,7 @@ final class SPCTimers {
 
     private let periods = [128, 128, 16]
 
-    static func hvbjoy(video: VideoTiming) -> u8 {
+    @inline(__always) static func hvbjoy(video: VideoTiming) -> u8 {
         var v: u8 = 0
         if video.inVBlank { v |= 0x80 }
         if video.isHBlank { v |= 0x40 }
@@ -16,14 +16,14 @@ final class SPCTimers {
         return v
     }
 
-    func reset() {
+    @inline(__always) func reset() {
         enable = 0
         target = [0,0,0]
         counter = [0,0,0]
         divider = [0,0,0]
     }
 
-    func writeControl(_ v: u8) {
+    @inline(__always) func writeControl(_ v: u8) {
         enable = v & 0x07
         for i in 0..<3 where (enable & (1 << i)) == 0 {
             counter[i] = 0
@@ -31,15 +31,15 @@ final class SPCTimers {
         }
     }
 
-    func writeTarget(_ i: Int, _ v: u8) { target[i] = v }
+    @inline(__always) func writeTarget(_ i: Int, _ v: u8) { target[i] = v }
 
-    func readCounter(_ i: Int) -> u8 {
+    @inline(__always) func readCounter(_ i: Int) -> u8 {
         let v = counter[i]
         counter[i] = 0
         return v
     }
 
-    func step(spcCycles: Int) {
+    @inline(__always) func step(spcCycles: Int) {
         for i in 0..<3 {
             guard (enable & (1 << i)) != 0 else { continue }
             divider[i] += spcCycles

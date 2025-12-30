@@ -32,7 +32,7 @@ struct VideoTiming {
     var isVBlankScanline: Bool {
         scanline >= VideoTiming.vblankStartScanline
     }
-    mutating func reset() {
+    @inline(__always) mutating func reset() {
         dot = 0
         scanline = 0
         inVBlank = false
@@ -41,19 +41,19 @@ struct VideoTiming {
         autoJoypadBusyDots = 0
     }
 
-    mutating func consumeDidEnterVBlank() -> Bool {
+    @inline(__always) mutating func consumeDidEnterVBlank() -> Bool {
         let v = didEnterVBlank
         didEnterVBlank = false
         return v
     }
 
-    mutating func consumeDidLeaveVBlank() -> Bool {
+    @inline(__always) mutating func consumeDidLeaveVBlank() -> Bool {
         let v = didLeaveVBlank
         didLeaveVBlank = false
         return v
     }
 
-    mutating func stepDot() {
+    @inline(__always) mutating func stepDot() {
         didEnterVBlank = false
         didLeaveVBlank = false
 

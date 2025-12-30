@@ -7,7 +7,7 @@ final class DebugWindowController: NSObject {
 
     private var window: NSWindow?
 
-    func open(with vm: EmulatorViewModel) {
+    @inline(__always) func open(with vm: EmulatorViewModel) {
         if let window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
