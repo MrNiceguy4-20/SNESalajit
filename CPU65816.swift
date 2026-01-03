@@ -1,7 +1,7 @@
 import Foundation
 
 final class CPU65816 {
-    private static let forceEmulationOnly: Bool = true
+    private static let forceEmulationOnly: Bool = false
 
     struct Registers {
         var a: u16 = 0
@@ -60,7 +60,6 @@ final class CPU65816 {
         isStopped = false
 
         guard let bus = bus else {
-            // No bus attached yet; leave PC at 0.
             r.pb = 0x00
             r.pc = 0x0000
             nmiLine = false
@@ -76,7 +75,6 @@ final class CPU65816 {
 
         @inline(__always)
         func entryOpcodeLooksValid(_ op: u8) -> Bool {
-            // Reject common "obviously wrong" entrypoints: BRK/COP/RTI/RTS/RTL/WAI/STP/BRA (and 0xFF).
             if op == 0xFF { return false }
             switch op {
             case 0x00, 0x02, 0x40, 0x60, 0x6B, 0xDB, 0x82, 0x42:
@@ -86,14 +84,10 @@ final class CPU65816 {
             }
         }
 
-        // Some ROMs (or mapping ambiguities) make the reset vector readable through both $00 and $80 mirrors.
-        // Validate the entry bytes in *both* mirrors and prefer the one that looks sane, to avoid landing on
-        // obviously-wrong opcodes like RTI (which would immediately pull garbage from the stack after reset).
         @inline(__always)
         func entryLooksSane4(_ b0: u8, _ b1: u8, _ b2: u8, _ b3: u8) -> Bool {
             if !entryOpcodeLooksValid(b0) { return false }
             if b0 == b1 && b1 == b2 && b2 == b3 {
-                // Repeated open-bus patterns show up as 0x00/0x20/0xFF runs.
                 if b0 == 0x00 || b0 == 0x20 || b0 == 0xFF { return false }
             }
             return true
@@ -113,7 +107,6 @@ final class CPU65816 {
 
             if entryLooksSane4(b80_0, b80_1, b80_2, b80_3) { return 0x80 }
             if entryLooksSane4(b00_0, b00_1, b00_2, b00_3) { return 0x00 }
-            // Default to $00; the CPU will still refuse low vectors below.
             return 0x00
         }
 
@@ -124,7 +117,6 @@ final class CPU65816 {
             return make16(lo, hi)
         }
 
-        // Choose a plausible reset vector, trying both cartridge mappings when available.
         var chosenPC: u16 = 0x0000
         var chosenMapping: Cartridge.Mapping? = nil
 
@@ -137,7 +129,6 @@ final class CPU65816 {
                 guard let vec = bus.readVector16(cart, mapping: mapping, addr: 0xFFFC) else { return nil }
                 if vec == 0x0000 || vec == 0xFFFF { return nil }
                 if vec < 0x8000 { return nil }
-                // Validate against both mirrors; some mappings present ROM code in the $80 mirror.
                 let pb = choosePBForEntry(vec)
                 let op = bus.read8_physical(bank: pb, addr: vec)
                 guard entryOpcodeLooksValid(op) else { return nil }
@@ -153,7 +144,6 @@ final class CPU65816 {
             }
         }
 
-        // Fallback: use the current bus mapping (which may include overrides).
         if chosenPC == 0x0000 {
             let v0 = readVectorCandidate(0x00, 0xFFFC)
             if v0 != 0xFFFF, v0 >= 0x8000, entryOpcodeLooksValid(bus.read8_physical(bank: choosePBForEntry(v0), addr: v0)) {
@@ -167,24 +157,17 @@ final class CPU65816 {
         }
 
         if chosenPC == 0x0000 {
-            // Last-resort safe-ish fallback (should never happen for a valid cart).
             chosenPC = 0x8000
         }
 
-        // If we identified a more plausible mapping than the ROM header reports,
-        // force it so instruction fetches and subsequent vector reads use it.
         if let m = chosenMapping {
             bus.forceCartridgeMapping(m)
         }
 
         var chosenPB = choosePBForEntry(chosenPC)
-        // PB fix: if reset vector in ROM space, force bank $80 so we fetch from ROM mirror.
         if chosenPC >= 0x8000 {
             chosenPB = 0x80
         }
-        // Final sanity check against *actual* mapped bus fetch, not just physical reads.
-        // If we would start on an obviously-wrong opcode (e.g. RTI/BRK/open-bus patterns),
-        // fall back to a safe ROM-ish entry to avoid immediate BRK/RTI loops.
         let entryOp = bus.read8(bank: chosenPB, addr: chosenPC)
         if !entryOpcodeLooksValid(entryOp) {
             chosenPC = 0x8000
@@ -273,8 +256,6 @@ final class CPU65816 {
         bus?.read8(bank: bank, addr: addr) ?? 0xFF
     }
 
-    // Instruction fetch should not be affected by the CPU wait/open-bus shortcut, and should
-    // honor cartridge mapping rules as implemented by Bus.read8_physical.
     @inline(__always) func readInstr8(_ bank: u8, _ addr: u16) -> u8 {
         bus?.read8_physical(bank: bank, addr: addr) ?? 0xFF
     }
@@ -407,10 +388,7 @@ final class CPU65816 {
 
     @inline(__always) func pForPush(brk: Bool) -> u8 {
         var p = r.p.rawValue
-        if r.emulationMode {
-            p |= 0x20
-            if brk { p |= 0x10 } else { p &= 0xEF }
-        }
+        if brk { p |= 0x10 } else { p &= 0xEF }
         return p
     }
 
@@ -426,6 +404,7 @@ final class CPU65816 {
      enum InterruptKind { case nmi, irq, brk, cop }
 
     @inline(__always) func serviceInterrupt(_ kind: InterruptKind) {
+        let interruptedPB = r.pb
         let vectorAddr: u16
         if r.emulationMode {
             switch kind {
@@ -449,12 +428,11 @@ final class CPU65816 {
         let isBrkLike = (kind == .brk || kind == .cop)
 
         if isBrkLike {
-            // BRK/COP are two-byte instructions; skip the signature byte so RTI returns to the next instruction.
             r.pc &+= 1
         }
 
         if !r.emulationMode {
-            push8(r.pb)
+            push8(interruptedPB)
         }
         let retPC: u16 = r.pc
         push8(hi8(retPC))
@@ -464,8 +442,6 @@ final class CPU65816 {
         setFlag(.irqDis, true)
         setFlag(.decimal, false)
 
-        // Prefer cartridge-aware vector reads when possible so we respect any mapping override and
-        // can apply plausibility checks (e.g. avoid vectors that land on RTI/BRK/open bus).
         @inline(__always) func fetchVectorViaBus(_ addr: u16) -> u16? {
             guard let bus = bus, let cart = bus.cartridge else { return nil }
             let mapping = bus.effectiveCartridgeMapping()
@@ -475,7 +451,6 @@ final class CPU65816 {
         @inline(__always) func fetchVector(_ vectorAddr: u16) -> u16 {
             if let v = fetchVectorViaBus(vectorAddr) { return v }
 
-            // Fallback: direct memory reads with a bank $80 mirror probe.
             var lo = read8(0x00, vectorAddr)
             var hi = read8(0x00, vectorAddr &+ 1)
             var vec = make16(lo, hi)
@@ -502,9 +477,6 @@ final class CPU65816 {
             }
         }
 
-        // Choose a program bank for the interrupt vector entry point. On real hardware the vector table
-        // is in bank $00, but depending on Bus mapping/physical mirroring, ROM code may be physically visible
-        // through the $80 mirror. Prefer $80 when the entry bytes there look sane.
         @inline(__always) func entryLooksSane(_ b0: u8, _ b1: u8, _ b2: u8, _ b3: u8) -> Bool {
             if b0 == 0xFF { return false }
             switch b0 {
@@ -519,10 +491,37 @@ final class CPU65816 {
             return true
         }
 
-        // If the vector is obviously bogus, don't jump into low WRAM/open-bus space.
         if vec == 0xFFFF || vec < 0x8000 {
-            // Keep the CPU in a safe ROM-ish region; this avoids BRK/RTI loops when vectors are mis-mapped.
             vec = 0x8000
+        }
+
+        @inline(__always) func entryOpcodeLooksValid(_ op: u8) -> Bool {
+            switch op {
+            case 0x00, 0x02, 0x40, 0x60, 0x6B, 0xCB, 0xDB, 0x82, 0x42:
+                return false
+            default:
+                return op != 0xFF
+            }
+        }
+
+        if let bus = bus {
+            let op00 = bus.read8_physical(bank: 0x00, addr: vec)
+            let op80 = bus.read8_physical(bank: 0x80, addr: vec)
+
+            if !entryOpcodeLooksValid(op00) && !entryOpcodeLooksValid(op80) {
+                if let cart = bus.cartridge {
+                    let cur = bus.effectiveCartridgeMapping()
+                    let alt: Cartridge.Mapping = (cur == .loROM) ? .hiROM : (cur == .hiROM ? .loROM : .unknown)
+                    if alt != .unknown, let v1 = bus.readVector16(cart, mapping: alt, addr: vectorAddr), v1 >= 0x8000 {
+                        vec = v1
+                    }
+                }
+            }
+
+            let finalOp = bus.read8(bank: 0x00, addr: vec)
+            if !entryOpcodeLooksValid(finalOp) {
+                vec = 0x8000
+            }
         }
 
         var chosenPB: u8 = 0x00
@@ -604,7 +603,6 @@ final class CPU65816 {
         let text: String
         let usedJIT: Bool
 
-        // Pre-instruction CPU state (captured at record time).
         let a: u16
         let x: u16
         let y: u16

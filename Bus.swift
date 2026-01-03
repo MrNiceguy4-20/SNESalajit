@@ -30,6 +30,9 @@ final class Bus {
     weak var ppu: PPU?
     weak var ppuOwner: Emulator?
     var apu: APU?
+    /// Shadow registers for APU I/O ports ($2140-$2143) when no APU core is attached.
+    /// This allows games to pass the initial SPC handshakes without a full SPC700 implementation.
+    private var apuPortShadow: [UInt8] = [0, 0, 0, 0]
     private(set) var cartridge: Cartridge?
     private var vectorMappingOverride: Cartridge.Mapping? = nil
     private var wram = WRAM()
@@ -325,7 +328,9 @@ final class Bus {
         guard let v0 = readVec(mapping) else { return nil }
 
         // Runtime safeguard: if a vector points at an invalid entrypoint, try the other mapping.
-        if addr == 0xFFFE || addr == 0xFFFA || addr == 0xFFFC {
+        // Apply plausibility safeguards for all CPU vectors (native and emulation).
+        // Native vectors live at $FFE4-$FFEE, emulation vectors at $FFF4-$FFFE, and RESET at $FFFC.
+        if (addr >= 0xFFE4 && addr <= 0xFFFE) {
             if v0 == 0x0000 || v0 == 0xFFFF || !vectorTargetLooksValid(mapping, v0) {
                 let alt: Cartridge.Mapping = (mapping == .loROM) ? .hiROM : .loROM
                 if let v1 = readVec(alt), v1 != 0x0000, v1 != 0xFFFF, vectorTargetLooksValid(alt, v1) {
@@ -518,9 +523,16 @@ final class Bus {
 
         // APU ports must be checked before the broad PPU $2100-$21FF range.
         if addr >= 0x2140 && addr <= 0x2143 {
-            v = apu?.cpuReadPort(Int(addr - 0x2140)) ?? openBus
-
-        } else if addr >= 0x2100 && addr <= 0x21FF {
+            let port = Int(addr - 0x2140)
+            if let apu = apu {
+                v = apu.cpuReadPort(port)
+            } else {
+                v = apuPortShadow[port]
+            }
+            recordTransaction(source: source, isWrite: false, bank: 0x00, addr: addr, value: v)
+            return v
+        }
+        if addr >= 0x2100 && addr <= 0x21FF {
             v = ppu?.readRegister(addr: addr, openBus: openBus, video: video) ?? openBus
 
         } else if addr == 0x2180 {
@@ -576,7 +588,20 @@ final class Bus {
 
         // APU ports must be checked before the broad PPU $2100-$21FF range.
         if addr >= 0x2140 && addr <= 0x2143 {
-            apu?.cpuWritePort(Int(addr - 0x2140), value: value)
+            let port = Int(addr - 0x2140)
+            if let apu = apu {
+                apu.cpuWritePort(port, value: value)
+            } else {
+                // No SPC700/APU core yet: keep a shadow and emulate the minimal SMW boot handshake.
+                apuPortShadow[port] = value
+
+                // Super Mario World (and many games) spin on CMP $2140 / BNE waiting for the APU to respond.
+                // If nothing is attached, nudge the handshake forward by providing a plausible response byte.
+                if apuPortShadow[0] == 0 {
+                    // Standard "APU ready" style value used by many boot routines.
+                    apuPortShadow[0] = 0xAA
+                }
+            }
             return
         }
 

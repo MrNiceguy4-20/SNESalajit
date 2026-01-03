@@ -18,6 +18,12 @@ enum CPUInstructionTables {
         case 0xE2: cpu.sep(cpu.fetch8()); return 3
         case 0xB8: cpu.setFlag(.overflow, false); return 2
         case 0xFB: cpu.xce(); return 2
+        case 0xEB:
+            let lo = u8(truncatingIfNeeded: cpu.r.a)
+            let hi = u8(truncatingIfNeeded: cpu.r.a >> 8)
+            cpu.setA(make16(hi, lo))
+            cpu.updateNZ8(u8(truncatingIfNeeded: cpu.r.a))
+            return 3
         case 0xCB: cpu.wai(); return 3
         case 0xDB: cpu.stp(); return 3
 
@@ -169,7 +175,7 @@ enum CPUInstructionTables {
         case 0x09:
             if cpu.aIs8() { ora(cpu: cpu, value8: CPUAddressing.imm8(cpu: cpu, bus: bus), value16: 0); return 2 }
             else { ora(cpu: cpu, value8: 0, value16: CPUAddressing.imm16(cpu: cpu, bus: bus)); return 3 }
-        case 0x05: // ORA dp
+        case 0x05:
             let extra = cpu.dpLowBytePenalty()
             return ora_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3 + extra)
         case 0x07: let t = CPUAddressing.dpIndirectLong(cpu: cpu, bus: bus); return ora_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 6)
@@ -253,9 +259,7 @@ enum CPUInstructionTables {
         case 0x67: let t = CPUAddressing.dpIndirectLong(cpu: cpu, bus: bus); return adc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 6)
         case 0x71: return adc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), cycles: 6)
         case 0x72: return adc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), cycles: 5)
-        case 0x73:
-            let eff = cpu.read16(0x00, cpu.r.sp &+ u16(cpu.fetch8())) &+ cpu.r.y
-            return adc_mem(cpu: cpu, bank: cpu.r.db, addr: eff, cycles: 7)
+        case 0x73: let eff = cpu.read16(0x00, cpu.r.sp &+ u16(cpu.fetch8())) &+ cpu.r.y; return adc_mem(cpu: cpu, bank: cpu.r.db, addr: eff, cycles: 7)
         case 0x75: return adc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
         case 0x6D: return adc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
         case 0x7D: return adc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
@@ -263,211 +267,206 @@ enum CPUInstructionTables {
         case 0x6F: let t = CPUAddressing.absLong(cpu: cpu, bus: bus); return adc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 5)
         case 0x7F: let t = CPUAddressing.absLongX(cpu: cpu, bus: bus); return adc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 5)
         case 0x77: let t = CPUAddressing.dpIndirectLongY(cpu: cpu, bus: bus); return adc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 6)
-
-        case 0xE9, 0xEB:
-            if cpu.aIs8() { sbc(cpu: cpu, value8: CPUAddressing.imm8(cpu: cpu, bus: bus), value16: 0); return 2 }
-            else { sbc(cpu: cpu, value8: 0, value16: CPUAddressing.imm16(cpu: cpu, bus: bus)); return 3 }
+        case 0xE9: if cpu.aIs8() { sbc(cpu: cpu, value8: CPUAddressing.imm8(cpu: cpu, bus: bus), value16: 0); return 2 } else { sbc(cpu: cpu, value8: 0, value16: CPUAddressing.imm16(cpu: cpu, bus: bus)); return 3 }
         case 0xE5: return sbc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
-        case 0xE1: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirectX(cpu: cpu, bus: bus), cycles: 6)
-        case 0xE3: return sbc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.stackRelative(cpu: cpu, bus: bus), cycles: 4)
-        case 0xE7: let t = CPUAddressing.dpIndirectLong(cpu: cpu, bus: bus); return sbc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 6)
-        case 0xF1: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), cycles: 6)
-        case 0xF2: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), cycles: 5)
-        case 0xF3: let eff = cpu.read16(0x00, cpu.r.sp &+ u16(cpu.fetch8())) &+ cpu.r.y; return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: eff, cycles: 7)
-        case 0xF5: return sbc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
-        case 0xED: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
-        case 0xFD: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
-        case 0xF9: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absY(cpu: cpu, bus: bus), cycles: 4)
-        case 0xEF: let t = CPUAddressing.absLong(cpu: cpu, bus: bus); return sbc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 5)
-        case 0xFF: let t = CPUAddressing.absLongX(cpu: cpu, bus: bus); return sbc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 5)
-        case 0xF7: let t = CPUAddressing.dpIndirectLongY(cpu: cpu, bus: bus); return sbc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 6)
+                case 0xE1: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirectX(cpu: cpu, bus: bus), cycles: 6)
+                case 0xE3: return sbc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.stackRelative(cpu: cpu, bus: bus), cycles: 4)
+                case 0xE7: let t = CPUAddressing.dpIndirectLong(cpu: cpu, bus: bus); return sbc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 6)
+                case 0xF1: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), cycles: 6)
+                case 0xF2: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), cycles: 5)
+                case 0xF3: let eff = cpu.read16(0x00, cpu.r.sp &+ u16(cpu.fetch8())) &+ cpu.r.y; return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: eff, cycles: 7)
+                case 0xF5: return sbc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
+                case 0xED: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+                case 0xFD: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
+                case 0xF9: return sbc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absY(cpu: cpu, bus: bus), cycles: 4)
+                case 0xEF: let t = CPUAddressing.absLong(cpu: cpu, bus: bus); return sbc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 5)
+                case 0xFF: let t = CPUAddressing.absLongX(cpu: cpu, bus: bus); return sbc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 5)
+                case 0xF7: let t = CPUAddressing.dpIndirectLongY(cpu: cpu, bus: bus); return sbc_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 6)
 
-        case 0xC9:
-            if cpu.aIs8() { cmpA(cpu: cpu, value8: CPUAddressing.imm8(cpu: cpu, bus: bus), value16: 0); return 2 }
-            else { cmpA(cpu: cpu, value8: 0, value16: CPUAddressing.imm16(cpu: cpu, bus: bus)); return 3 }
-        case 0xC5: return cmpA_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
-        case 0xD5: return cmpA_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
-        case 0xCD: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
-        case 0xDD: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
-        case 0xD9: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absY(cpu: cpu, bus: bus), cycles: 4)
-        case 0xD2: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), cycles: 5)
-        case 0xC1: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirectX(cpu: cpu, bus: bus), cycles: 6)
-        case 0xC3: return cmpA_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.stackRelative(cpu: cpu, bus: bus), cycles: 4)
-        case 0xC7: let t = CPUAddressing.dpIndirectLong(cpu: cpu, bus: bus); return cmpA_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 6)
-        case 0xD1: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), cycles: 6)
-        case 0xD3: let eff = cpu.read16(0x00, cpu.r.sp &+ u16(cpu.fetch8())) &+ cpu.r.y; return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: eff, cycles: 7)
-        case 0xCF: let t = CPUAddressing.absLong(cpu: cpu, bus: bus); return cmpA_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 5)
-        case 0xDF: let t = CPUAddressing.absLongX(cpu: cpu, bus: bus); return cmpA_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 5)
-        case 0xD7: let t = CPUAddressing.dpIndirectLongY(cpu: cpu, bus: bus); return cmpA_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 6)
+                case 0xC9:
+                    if cpu.aIs8() { cmpA(cpu: cpu, value8: CPUAddressing.imm8(cpu: cpu, bus: bus), value16: 0); return 2 }
+                    else { cmpA(cpu: cpu, value8: 0, value16: CPUAddressing.imm16(cpu: cpu, bus: bus)); return 3 }
+                case 0xC5: return cmpA_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+                case 0xD5: return cmpA_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 4)
+                case 0xCD: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+                case 0xDD: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 4)
+                case 0xD9: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absY(cpu: cpu, bus: bus), cycles: 4)
+                case 0xD2: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), cycles: 5)
+                case 0xC1: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirectX(cpu: cpu, bus: bus), cycles: 6)
+                case 0xC3: return cmpA_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.stackRelative(cpu: cpu, bus: bus), cycles: 4)
+                case 0xC7: let t = CPUAddressing.dpIndirectLong(cpu: cpu, bus: bus); return cmpA_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 6)
+                case 0xD1: return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), cycles: 6)
+                case 0xD3: let eff = cpu.read16(0x00, cpu.r.sp &+ u16(cpu.fetch8())) &+ cpu.r.y; return cmpA_mem(cpu: cpu, bank: cpu.r.db, addr: eff, cycles: 7)
+                case 0xCF: let t = CPUAddressing.absLong(cpu: cpu, bus: bus); return cmpA_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 5)
+                case 0xDF: let t = CPUAddressing.absLongX(cpu: cpu, bus: bus); return cmpA_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 5)
+                case 0xD7: let t = CPUAddressing.dpIndirectLongY(cpu: cpu, bus: bus); return cmpA_mem(cpu: cpu, bank: t.bank, addr: t.addr, cycles: 6)
 
-        case 0xE0:
-            if cpu.xIs8() { cmpX(cpu: cpu, value8: CPUAddressing.imm8(cpu: cpu, bus: bus), value16: 0); return 2 }
-            else { cmpX(cpu: cpu, value8: 0, value16: CPUAddressing.imm16(cpu: cpu, bus: bus)); return 3 }
-        case 0xE4: return cmpX_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
-        case 0xEC: return cmpX_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+                case 0xE0:
+                    if cpu.xIs8() { cmpX(cpu: cpu, value8: CPUAddressing.imm8(cpu: cpu, bus: bus), value16: 0); return 2 }
+                    else { cmpX(cpu: cpu, value8: 0, value16: CPUAddressing.imm16(cpu: cpu, bus: bus)); return 3 }
+                case 0xE4: return cmpX_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+                case 0xEC: return cmpX_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
 
-        case 0xC0:
-            if cpu.xIs8() { cmpY(cpu: cpu, value8: CPUAddressing.imm8(cpu: cpu, bus: bus), value16: 0); return 2 }
-            else { cmpY(cpu: cpu, value8: 0, value16: CPUAddressing.imm16(cpu: cpu, bus: bus)); return 3 }
-        case 0xC4: return cmpY_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
-        case 0xCC: return cmpY_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
+                case 0xC0:
+                    if cpu.xIs8() { cmpY(cpu: cpu, value8: CPUAddressing.imm8(cpu: cpu, bus: bus), value16: 0); return 2 }
+                    else { cmpY(cpu: cpu, value8: 0, value16: CPUAddressing.imm16(cpu: cpu, bus: bus)); return 3 }
+                case 0xC4: return cmpY_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 3)
+                case 0xCC: return cmpY_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 4)
 
-        case 0x06: return asl_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
-        case 0x16: return asl_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
-        case 0x0E: return asl_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
-        case 0x1E: return asl_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
-        case 0x26: return rol_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
-        case 0x36: return rol_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
-        case 0x2E: return rol_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
-        case 0x3E: return rol_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
-        case 0x46: return lsr_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
-        case 0x56: return lsr_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
-        case 0x4E: return lsr_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
-        case 0x5E: return lsr_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
-        case 0x66: return ror_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
-        case 0x76: return ror_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
-        case 0x6E: return ror_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
-        case 0x7E: return ror_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+                case 0x06: return asl_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+                case 0x16: return asl_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+                case 0x0E: return asl_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+                case 0x1E: return asl_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+                case 0x26: return rol_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+                case 0x36: return rol_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+                case 0x2E: return rol_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+                case 0x3E: return rol_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+                case 0x46: return lsr_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+                case 0x56: return lsr_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+                case 0x4E: return lsr_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+                case 0x5E: return lsr_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+                case 0x66: return ror_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+                case 0x76: return ror_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+                case 0x6E: return ror_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+                case 0x7E: return ror_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
 
-        case 0x04: return tsb_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
-        case 0x0C: return tsb_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
-        case 0x14: return trb_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
-        case 0x1C: return trb_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+                case 0x04: return tsb_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+                case 0x0C: return tsb_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+                case 0x14: return trb_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+                case 0x1C: return trb_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
 
-        case 0xE6: return inc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
-        case 0xF6: return inc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
-        case 0xEE: return inc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
-        case 0xFE: return inc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
-        case 0xC6: return dec_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
-        case 0xD6: return dec_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
-        case 0xCE: return dec_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
-        case 0xDE: return dec_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+                case 0xE6: return inc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+                case 0xF6: return inc_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+                case 0xEE: return inc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+                case 0xFE: return inc_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
+                case 0xC6: return dec_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dp(cpu: cpu, bus: bus), cycles: 5)
+                case 0xD6: return dec_mem(cpu: cpu, bank: 0x00, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), cycles: 6)
+                case 0xCE: return dec_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), cycles: 6)
+                case 0xDE: return dec_mem(cpu: cpu, bank: cpu.r.db, addr: CPUAddressing.absX(cpu: cpu, bus: bus), cycles: 7)
 
-        case 0xA9:
-            if cpu.aIs8() { let v = CPUAddressing.imm8(cpu: cpu, bus: bus); cpu.setA8(v); cpu.updateNZ8(v); return 2 }
-            else { let v = CPUAddressing.imm16(cpu: cpu, bus: bus); cpu.setA(v); cpu.updateNZ16(v); return 3 }
-        case 0xA2:
-            if cpu.xIs8() { let v = CPUAddressing.imm8(cpu: cpu, bus: bus); cpu.setX8(v); cpu.updateNZ8(v); return 2 }
-            else { let v = CPUAddressing.imm16(cpu: cpu, bus: bus); cpu.setX(v); cpu.updateNZ16(v); return 3 }
-        case 0xA0:
-            if cpu.xIs8() { let v = CPUAddressing.imm8(cpu: cpu, bus: bus); cpu.setY8(v); cpu.updateNZ8(v); return 2 }
-            else { let v = CPUAddressing.imm16(cpu: cpu, bus: bus); cpu.setY(v); cpu.updateNZ16(v); return 3 }
-        case 0xA5: return lda_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
-        case 0xB5: return lda_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
-        case 0xA1: return lda_mem(cpu: cpu, addr: CPUAddressing.dpIndirectX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
-        case 0xB2: return lda_mem(cpu: cpu, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
-        case 0xB7: let t = CPUAddressing.dpIndirectLongY(cpu: cpu, bus: bus); return lda_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 6)
-        case 0xB1: return lda_mem(cpu: cpu, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
-        case 0xB3:
-            let eff = cpu.read16(0x00, cpu.r.sp &+ u16(cpu.fetch8())) &+ cpu.r.y
-            return lda_mem(cpu: cpu, addr: eff, bank: cpu.r.db, cycles: 7)
-        case 0xA3: return lda_mem(cpu: cpu, addr: CPUAddressing.stackRelative(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
-        case 0xA7: let t = CPUAddressing.dpIndirectLong(cpu: cpu, bus: bus); return lda_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 6)
-        case 0xAF: let t = CPUAddressing.absLong(cpu: cpu, bus: bus); return lda_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 5)
-        case 0xAD: return lda_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
-        case 0xBD: return lda_mem(cpu: cpu, addr: CPUAddressing.absX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
-        case 0xB9: return lda_mem(cpu: cpu, addr: CPUAddressing.absY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
-        case 0xBF: let t = CPUAddressing.absLongX(cpu: cpu, bus: bus); return lda_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 5)
+                case 0xA9:
+                    if cpu.aIs8() { let v = CPUAddressing.imm8(cpu: cpu, bus: bus); cpu.setA8(v); cpu.updateNZ8(v); return 2 }
+                    else { let v = CPUAddressing.imm16(cpu: cpu, bus: bus); cpu.setA(v); cpu.updateNZ16(v); return 3 }
+                case 0xA2:
+                    if cpu.xIs8() { let v = CPUAddressing.imm8(cpu: cpu, bus: bus); cpu.setX8(v); cpu.updateNZ8(v); return 2 }
+                    else { let v = CPUAddressing.imm16(cpu: cpu, bus: bus); cpu.setX(v); cpu.updateNZ16(v); return 3 }
+                case 0xA0:
+                    if cpu.xIs8() { let v = CPUAddressing.imm8(cpu: cpu, bus: bus); cpu.setY8(v); cpu.updateNZ8(v); return 2 }
+                    else { let v = CPUAddressing.imm16(cpu: cpu, bus: bus); cpu.setY(v); cpu.updateNZ16(v); return 3 }
+                case 0xA5: return lda_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
+                case 0xB5: return lda_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
+                case 0xA1: return lda_mem(cpu: cpu, addr: CPUAddressing.dpIndirectX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
+                case 0xB2: return lda_mem(cpu: cpu, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
+                case 0xB7: let t = CPUAddressing.dpIndirectLongY(cpu: cpu, bus: bus); return lda_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 6)
+                case 0xB1: return lda_mem(cpu: cpu, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
+                case 0xB3:
+                    let eff = cpu.read16(0x00, cpu.r.sp &+ u16(cpu.fetch8())) &+ cpu.r.y
+                    return lda_mem(cpu: cpu, addr: eff, bank: cpu.r.db, cycles: 7)
+                case 0xA3: return lda_mem(cpu: cpu, addr: CPUAddressing.stackRelative(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
+                case 0xA7: let t = CPUAddressing.dpIndirectLong(cpu: cpu, bus: bus); return lda_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 6)
+                case 0xAF: let t = CPUAddressing.absLong(cpu: cpu, bus: bus); return lda_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 5)
+                case 0xAD: return lda_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+                case 0xBD: return lda_mem(cpu: cpu, addr: CPUAddressing.absX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+                case 0xB9: return lda_mem(cpu: cpu, addr: CPUAddressing.absY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+                case 0xBF: let t = CPUAddressing.absLongX(cpu: cpu, bus: bus); return lda_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 5)
 
-        case 0xA6: return ldx_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
-        case 0xB6: return ldx_mem(cpu: cpu, addr: CPUAddressing.dpY(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
-        case 0xAE: return ldx_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
-        case 0xBE: return ldx_mem(cpu: cpu, addr: CPUAddressing.absY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
-        case 0xA4: return ldy_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
-        case 0xB4: return ldy_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
-        case 0xAC: return ldy_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
-        case 0xBC: return ldy_mem(cpu: cpu, addr: CPUAddressing.absX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+                case 0xA6: return ldx_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
+                case 0xB6: return ldx_mem(cpu: cpu, addr: CPUAddressing.dpY(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
+                case 0xAE: return ldx_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+                case 0xBE: return ldx_mem(cpu: cpu, addr: CPUAddressing.absY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+                case 0xA4: return ldy_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
+                case 0xB4: return ldy_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
+                case 0xAC: return ldy_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+                case 0xBC: return ldy_mem(cpu: cpu, addr: CPUAddressing.absX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
 
-        case 0x85: return sta_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
-        case 0x95: return sta_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
-        case 0x81: return sta_mem(cpu: cpu, addr: CPUAddressing.dpIndirectX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
-        case 0x92: return sta_mem(cpu: cpu, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
-        case 0x93:
-            let offset = u16(cpu.fetch8())
-            let ptr = cpu.r.sp &+ offset
-            let eff = cpu.read16(0x00, ptr) &+ cpu.r.y
-            return sta_mem(cpu: cpu, addr: eff, bank: cpu.r.db, cycles: 7)
-        case 0x91: return sta_mem(cpu: cpu, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
-        case 0x83: return sta_mem(cpu: cpu, addr: CPUAddressing.stackRelative(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
-        case 0x87: let t = CPUAddressing.dpIndirectLong(cpu: cpu, bus: bus); return sta_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 6)
-        case 0x97: let t = CPUAddressing.dpIndirectLongY(cpu: cpu, bus: bus); return sta_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 6)
-        case 0x8D: return sta_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
-        case 0x9D: return sta_mem(cpu: cpu, addr: CPUAddressing.absX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
-        case 0x99: return sta_mem(cpu: cpu, addr: CPUAddressing.absY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
-        case 0x9F: let t = CPUAddressing.absLongX(cpu: cpu, bus: bus); return sta_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 5)
-        case 0x8F: let t = CPUAddressing.absLong(cpu: cpu, bus: bus); return sta_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 5)
+                case 0x85: return sta_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
+                case 0x95: return sta_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
+                case 0x81: return sta_mem(cpu: cpu, addr: CPUAddressing.dpIndirectX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
+                case 0x92: return sta_mem(cpu: cpu, addr: CPUAddressing.dpIndirect(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
+                case 0x93:
+                    let offset = u16(cpu.fetch8())
+                    let ptr = cpu.r.sp &+ offset
+                    let eff = cpu.read16(0x00, ptr) &+ cpu.r.y
+                    return sta_mem(cpu: cpu, addr: eff, bank: cpu.r.db, cycles: 7)
+                case 0x91: return sta_mem(cpu: cpu, addr: CPUAddressing.dpIndirectY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 6)
+                case 0x83: return sta_mem(cpu: cpu, addr: CPUAddressing.stackRelative(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
+                case 0x87: let t = CPUAddressing.dpIndirectLong(cpu: cpu, bus: bus); return sta_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 6)
+                case 0x97: let t = CPUAddressing.dpIndirectLongY(cpu: cpu, bus: bus); return sta_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 6)
+                case 0x8D: return sta_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+                case 0x9D: return sta_mem(cpu: cpu, addr: CPUAddressing.absX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
+                case 0x99: return sta_mem(cpu: cpu, addr: CPUAddressing.absY(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
+                case 0x9F: let t = CPUAddressing.absLongX(cpu: cpu, bus: bus); return sta_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 5)
+                case 0x8F: let t = CPUAddressing.absLong(cpu: cpu, bus: bus); return sta_mem(cpu: cpu, addr: t.addr, bank: t.bank, cycles: 5)
 
-        case 0x86: return stx_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
-        case 0x8E: return stx_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
-        case 0x96: return stx_mem(cpu: cpu, addr: CPUAddressing.dpY(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
-        case 0x84: return sty_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
-        case 0x94: return sty_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
-        case 0x8C: return sty_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+                case 0x86: return stx_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
+                case 0x8E: return stx_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+                case 0x96: return stx_mem(cpu: cpu, addr: CPUAddressing.dpY(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
+                case 0x84: return sty_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
+                case 0x94: return sty_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
+                case 0x8C: return sty_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
 
-        case 0x64: return stz_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
-        case 0x74: return stz_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
-        case 0x9C: return stz_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
-        case 0x9E: return stz_mem(cpu: cpu, addr: CPUAddressing.absX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
+                case 0x64: return stz_mem(cpu: cpu, addr: CPUAddressing.dp(cpu: cpu, bus: bus), bank: 0x00, cycles: 3)
+                case 0x74: return stz_mem(cpu: cpu, addr: CPUAddressing.dpX(cpu: cpu, bus: bus), bank: 0x00, cycles: 4)
+                case 0x9C: return stz_mem(cpu: cpu, addr: CPUAddressing.abs16(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 4)
+                case 0x9E: return stz_mem(cpu: cpu, addr: CPUAddressing.absX(cpu: cpu, bus: bus), bank: cpu.r.db, cycles: 5)
 
-        case 0x4C: cpu.setPC(CPUAddressing.abs16(cpu: cpu, bus: bus)); return 3
-        case 0x6C: cpu.setPC(CPUAddressing.absIndirect(cpu: cpu, bus: bus)); return 5
-        case 0x7C:
-            let ptr = cpu.fetch16() &+ cpu.r.x
-            let target = make16(cpu.read8(cpu.r.pb, ptr), cpu.read8(cpu.r.pb, ptr &+ 1))
-            cpu.setPC(target); return 6
-        case 0x5C:
-            let lo = cpu.fetch8(); let hi = cpu.fetch8(); cpu.setPB(cpu.fetch8()); cpu.setPC(make16(lo, hi)); return 4
-        case 0xDC:
-            let ptr = cpu.fetch16()
-            let target = make16(cpu.read8(0x00, ptr), cpu.read8(0x00, ptr &+ 1))
-            cpu.setPB(cpu.read8(0x00, ptr &+ 2)); cpu.setPC(target); return 6
-        case 0x20:
-            let target = CPUAddressing.abs16(cpu: cpu, bus: bus)
-            cpu.push16(cpu.r.pc &- 1); cpu.setPC(target); return 6
-        case 0xFC:
-            let ptr = cpu.fetch16() &+ cpu.r.x
-            let target = make16(cpu.read8(cpu.r.pb, ptr), cpu.read8(cpu.r.pb, ptr &+ 1))
-            let ret = cpu.r.pc &- 1
-            cpu.push8(hi8(ret)); cpu.push8(lo8(ret)); cpu.setPC(target); return 8
-        case 0x22:
-            let target = CPUAddressing.absLong(cpu: cpu, bus: bus)
-            cpu.push8(cpu.r.pb); cpu.push16(cpu.r.pc &- 1); cpu.setPB(target.bank); cpu.setPC(target.addr); return 8
-        case 0x6B:
-            let ret = cpu.pull16(); cpu.setPB(cpu.pull8()); cpu.setPC(ret &+ 1); return 6
-        case 0x82:
-            cpu.setPC(cpu.r.pc &+ u16(bitPattern: Int16(CPUAddressing.rel16(cpu: cpu, bus: bus)))); return 4
-        case 0x60: cpu.setPC(cpu.pull16() &+ 1); return 6
-        case 0x80:
-            cpu.setPC(cpu.r.pc &+ u16(bitPattern: Int16(CPUAddressing.rel8(cpu: cpu, bus: bus)))); return 3
-        case 0xF0: return branch(cpu: cpu, bus: bus, cond: cpu.flag(.zero))
-        case 0xD0: return branch(cpu: cpu, bus: bus, cond: !cpu.flag(.zero))
-        case 0x10: return branch(cpu: cpu, bus: bus, cond: !cpu.flag(.negative))
-        case 0x30: return branch(cpu: cpu, bus: bus, cond: cpu.flag(.negative))
-        case 0x90: return branch(cpu: cpu, bus: bus, cond: !cpu.flag(.carry))
-        case 0xB0: return branch(cpu: cpu, bus: bus, cond: cpu.flag(.carry))
-        case 0x50: return branch(cpu: cpu, bus: bus, cond: !cpu.flag(.overflow))
-        case 0x70: return branch(cpu: cpu, bus: bus, cond: cpu.flag(.overflow))
+                case 0x4C: cpu.setPC(CPUAddressing.abs16(cpu: cpu, bus: bus)); return 3
+                case 0x6C: cpu.setPC(CPUAddressing.absIndirect(cpu: cpu, bus: bus)); return 5
+                case 0x7C:
+                    let ptr = cpu.fetch16() &+ cpu.r.x
+                    let target = make16(cpu.read8(cpu.r.pb, ptr), cpu.read8(cpu.r.pb, ptr &+ 1))
+                    cpu.setPC(target); return 6
+                case 0x5C:
+                    let lo = cpu.fetch8(); let hi = cpu.fetch8(); cpu.setPB(cpu.fetch8()); cpu.setPC(make16(lo, hi)); return 4
+                case 0xDC:
+                    let ptr = cpu.fetch16()
+                    let target = make16(cpu.read8(0x00, ptr), cpu.read8(0x00, ptr &+ 1))
+                    cpu.setPB(cpu.read8(0x00, ptr &+ 2)); cpu.setPC(target); return 6
+                case 0x20:
+                    let target = CPUAddressing.abs16(cpu: cpu, bus: bus)
+                    cpu.push16(cpu.r.pc &- 1); cpu.setPC(target); return 6
+                case 0xFC:
+                    let ptr = cpu.fetch16() &+ cpu.r.x
+                    let target = make16(cpu.read8(cpu.r.pb, ptr), cpu.read8(cpu.r.pb, ptr &+ 1))
+                    let ret = cpu.r.pc &- 1
+                    cpu.push8(hi8(ret)); cpu.push8(lo8(ret)); cpu.setPC(target); return 8
+                case 0x22:
+                    let target = CPUAddressing.absLong(cpu: cpu, bus: bus)
+                    cpu.push8(cpu.r.pb); cpu.push16(cpu.r.pc &- 1); cpu.setPB(target.bank); cpu.setPC(target.addr); return 8
+                case 0x6B:
+                    let ret = cpu.pull16(); cpu.setPB(cpu.pull8()); cpu.setPC(ret &+ 1); return 6
+                case 0x82:
+                    let rel = CPUAddressing.rel16(cpu: cpu, bus: bus)
+                    cpu.setPC(cpu.r.pc &+ u16(bitPattern: Int16(rel)))
+                    return 4
+                case 0x60: cpu.setPC(cpu.pull16() &+ 1); return 6
+                case 0x80:
+                    let rel = CPUAddressing.rel8(cpu: cpu, bus: bus)
+                    cpu.setPC(cpu.r.pc &+ u16(bitPattern: Int16(rel)))
+                    return 3
+                case 0xF0: return branch(cpu: cpu, bus: bus, cond: cpu.flag(.zero))
+                case 0xD0: return branch(cpu: cpu, bus: bus, cond: !cpu.flag(.zero))
+                case 0x10: return branch(cpu: cpu, bus: bus, cond: !cpu.flag(.negative))
+                case 0x30: return branch(cpu: cpu, bus: bus, cond: cpu.flag(.negative))
+                case 0x90: return branch(cpu: cpu, bus: bus, cond: !cpu.flag(.carry))
+                case 0xB0: return branch(cpu: cpu, bus: bus, cond: cpu.flag(.carry))
+                case 0x50: return branch(cpu: cpu, bus: bus, cond: !cpu.flag(.overflow))
+                case 0x70: return branch(cpu: cpu, bus: bus, cond: cpu.flag(.overflow))
 
-        default:
-            return 2
-        }
-    }
+                default:
+                    return 2
+                }
+            }
 
     @inline(__always)
     private static func blockMove(cpu: CPU65816, bus: Bus, opcode: u8) -> Int {
-        let destBank = cpu.fetch8()
-        let srcBank = cpu.fetch8()
-        let value = cpu.read8(srcBank, cpu.r.x)
-        cpu.write8(destBank, cpu.r.y, value)
+        let destBank = cpu.fetch8(); let srcBank = cpu.fetch8()
+        let value = cpu.read8(srcBank, cpu.r.x); cpu.write8(destBank, cpu.r.y, value)
         if opcode == 0x54 { cpu.setX(cpu.r.x &+ 1); cpu.setY(cpu.r.y &+ 1) }
         else { cpu.setX(cpu.r.x &- 1); cpu.setY(cpu.r.y &- 1) }
-        let newA = cpu.r.a &- 1
-        cpu.setA(newA)
-        if newA != 0xFFFF {
-        cpu.setPC(cpu.r.pc &- 3)
-    }
-        cpu.setDB(destBank)
-          return 7
+        let newA = cpu.r.a &- 1; cpu.setA(newA)
+        if newA != 0xFFFF { cpu.setPC(cpu.r.pc &- 3) }
+        cpu.setDB(destBank); return 7
     }
 
     @inline(__always)
@@ -601,60 +600,46 @@ enum CPUInstructionTables {
     }
 
     @inline(__always)
-        private static func adc(cpu: CPU65816, value8: u8, value16: u16) {
-            if cpu.aIs8() {
-                let a = cpu.a8()
-                let m = value8
-                let carry: u16 = cpu.flag(.carry) ? 1 : 0
-                
-                let resultBinary = u16(a) &+ u16(m) &+ carry
-                cpu.setFlag(.overflow, (~(u16(a) ^ u16(m)) & (u16(a) ^ resultBinary) & 0x0080) != 0)
-                cpu.updateNZ8(u8(truncatingIfNeeded: resultBinary))
-                
-                if cpu.flag(.decimal) {
-                    var al = (a & 0x0F) &+ (m & 0x0F) &+ u8(carry)
-                    if al > 9 { al &+= 6 }
-                    var ah = (a & 0xF0) &+ (m & 0xF0) &+ (al > 0x0F ? 0x10 : 0)
-                    
-                    
-                    if ah > 0x90 { ah &+= 0x60 }
-                    
-                    cpu.setFlag(.carry, ah > 0xFF)
-                    cpu.setA8(u8(truncatingIfNeeded: (al & 0x0F) | (ah & 0xF0)))
-                } else {
-                    cpu.setFlag(.carry, resultBinary > 0xFF)
-                    cpu.setA8(u8(truncatingIfNeeded: resultBinary))
-                }
+    private static func adc(cpu: CPU65816, value8: u8, value16: u16) {
+        if cpu.aIs8() {
+            let a = cpu.a8(); let m = value8; let carry: u16 = cpu.flag(.carry) ? 1 : 0
+            let resultBinary = u16(a) &+ u16(m) &+ carry
+            cpu.setFlag(.overflow, (~(u16(a) ^ u16(m)) & (u16(a) ^ resultBinary) & 0x0080) != 0)
+            cpu.updateNZ8(u8(truncatingIfNeeded: resultBinary))
+            if cpu.flag(.decimal) {
+                var al = (a & 0x0F) &+ (m & 0x0F) &+ u8(carry)
+                if al > 9 { al &+= 6 }
+                var ah = (a & 0xF0) &+ (m & 0xF0) &+ (al > 0x0F ? 0x10 : 0)
+                if ah > 0x90 { ah &+= 0x60 }
+                cpu.setFlag(.carry, ah > 0xFF)
+                cpu.setA8(u8(truncatingIfNeeded: (al & 0x0F) | (ah & 0xF0)))
             } else {
-                let a = cpu.r.a
-                let m = value16
-                let carry: u32 = cpu.flag(.carry) ? 1 : 0
-                
-                let resultBinary = u32(a) &+ u32(m) &+ carry
-                cpu.setFlag(.overflow, (~(u32(a) ^ u32(m)) & (u32(a) ^ resultBinary) & 0x8000) != 0)
-                cpu.updateNZ16(u16(truncatingIfNeeded: resultBinary))
-                
-                if cpu.flag(.decimal) {
-                    var al = (a & 0x000F) &+ (m & 0x000F) &+ u16(carry)
-                    if al > 9 { al &+= 6 }
-                    var ah = (a & 0x00F0) &+ (m & 0x00F0) &+ (al > 0x0F ? 0x10 : 0)
-                    if ah > 0x90 { ah &+= 0x60 }
-                    
-                    var bl = (a & 0x0F00) &+ (m & 0x0F00) &+ (ah > 0xFF ? 0x100 : 0)
-                    if bl > 0x900 { bl &+= 0x600 }
-                    var bh = (a & 0xF000) &+ (m & 0xF000) &+ (bl > 0xF00 ? 0x1000 : 0)
-                    if bh > 0x9000 { bh &+= 0x6000 }
-                    
-                    cpu.setFlag(.carry, bh > 0xFFFF)
-                    
-                    let resultBCD = (al & 0x000F) | (ah & 0x00F0) | (bl & 0x0F00) | (bh & 0xF000)
-                    cpu.setA(u16(truncatingIfNeeded: resultBCD))
-                } else {
-                    cpu.setFlag(.carry, resultBinary > 0xFFFF)
-                    cpu.setA(u16(truncatingIfNeeded: resultBinary))
-                }
+                cpu.setFlag(.carry, resultBinary > 0xFF)
+                cpu.setA8(u8(truncatingIfNeeded: resultBinary))
+            }
+        } else {
+            let a = cpu.r.a; let m = value16; let carry: u32 = cpu.flag(.carry) ? 1 : 0
+            let resultBinary = u32(a) &+ u32(m) &+ carry
+            cpu.setFlag(.overflow, (~(u32(a) ^ u32(m)) & (u32(a) ^ resultBinary) & 0x8000) != 0)
+            cpu.updateNZ16(u16(truncatingIfNeeded: resultBinary))
+            if cpu.flag(.decimal) {
+                var al = (a & 0x000F) &+ (m & 0x000F) &+ u16(carry)
+                if al > 9 { al &+= 6 }
+                var ah = (a & 0x00F0) &+ (m & 0x00F0) &+ (al > 0x0F ? 0x10 : 0)
+                if ah > 0x90 { ah &+= 0x60 }
+                var bl = (a & 0x0F00) &+ (m & 0x0F00) &+ (ah > 0xFF ? 0x100 : 0)
+                if bl > 0x900 { bl &+= 0x600 }
+                var bh = (a & 0xF000) &+ (m & 0xF000) &+ (bl > 0xF00 ? 0x1000 : 0)
+                if bh > 0x9000 { bh &+= 0x6000 }
+                cpu.setFlag(.carry, bh > 0xFFFF)
+                let resultBCD = (al & 0x000F) | (ah & 0x00F0) | (bl & 0x0F00) | (bh & 0xF000)
+                cpu.setA(u16(truncatingIfNeeded: resultBCD))
+            } else {
+                cpu.setFlag(.carry, resultBinary > 0xFFFF)
+                cpu.setA(u16(truncatingIfNeeded: resultBinary))
             }
         }
+    }
 
     @inline(__always)
     private static func adc_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
@@ -664,63 +649,37 @@ enum CPUInstructionTables {
     }
 
     @inline(__always)
-        private static func sbc(cpu: CPU65816, value8: u8, value16: u16) {
-            if cpu.aIs8() {
-                let a = cpu.a8()
-                let m = value8
-                let carry: Int = cpu.flag(.carry) ? 1 : 0
-                let notM = ~m
-                let binaryRes = Int(a) + Int(notM) + carry
-                
-                cpu.updateNZ8(u8(truncatingIfNeeded: binaryRes))
-
-                let overflow = ((Int(a) ^ binaryRes) & (Int(notM) ^ binaryRes) & 0x80) != 0
-                cpu.setFlag(.overflow, overflow)
-                
-                if cpu.flag(.decimal) {
-                    let temp = Int(a) - Int(m) - (1 - carry)
-                    var result = temp
-                    if (a & 0x0F) < (m & 0x0F) + (1 - u8(carry)) {
-                       result -= 6
-                    }
-                    if result < 0 {
-                       result -= 0x60
-                    }
-                    
-                    cpu.setFlag(.carry, temp >= 0)
-                    cpu.setA8(u8(truncatingIfNeeded: result))
-                } else {
-                    cpu.setFlag(.carry, binaryRes > 0xFF)
-                    cpu.setA8(u8(truncatingIfNeeded: binaryRes))
-                }
+    private static func sbc(cpu: CPU65816, value8: u8, value16: u16) {
+        if cpu.aIs8() {
+            let a = cpu.a8(); let m = value8; let carry: Int = cpu.flag(.carry) ? 1 : 0
+            let notM = ~m; let binaryRes = Int(a) + Int(notM) + carry
+            cpu.updateNZ8(u8(truncatingIfNeeded: binaryRes))
+            cpu.setFlag(.overflow, ((Int(a) ^ binaryRes) & (Int(notM) ^ binaryRes) & 0x80) != 0)
+            if cpu.flag(.decimal) {
+                let temp = Int(a) - Int(m) - (1 - carry); var result = temp
+                if (a & 0x0F) < (m & 0x0F) + (1 - u8(carry)) { result -= 6 }
+                if result < 0 { result -= 0x60 }
+                cpu.setFlag(.carry, temp >= 0); cpu.setA8(u8(truncatingIfNeeded: result))
             } else {
-                let a = cpu.r.a
-                let m = value16
-                let carry: Int = cpu.flag(.carry) ? 1 : 0
-                
-                let notM = ~m
-                let binaryRes = Int(a) + Int(notM) + carry
-                
-                cpu.updateNZ16(u16(truncatingIfNeeded: binaryRes))
-                let overflow = ((Int(a) ^ binaryRes) & (Int(notM) ^ binaryRes) & 0x8000) != 0
-                cpu.setFlag(.overflow, overflow)
-                
-                if cpu.flag(.decimal) {
-                    let temp = Int(a) - Int(m) - (1 - carry)
-                    var result = temp
-                    if (a & 0x0F) < (m & 0x0F) + (1 - u16(carry)) { result -= 6 }
-                    if (a & 0xF0) < (m & 0xF0) { result -= 0x60 }
-                    if (a & 0x0F00) < (m & 0x0F00) { result -= 0x600 }
-                    if (a & 0xF000) < (m & 0xF000) { result -= 0x6000 }
-                    
-                    cpu.setFlag(.carry, temp >= 0)
-                    cpu.setA(u16(truncatingIfNeeded: result))
-                } else {
-                    cpu.setFlag(.carry, binaryRes > 0xFFFF)
-                    cpu.setA(u16(truncatingIfNeeded: binaryRes))
-                }
+                cpu.setFlag(.carry, binaryRes > 0xFF); cpu.setA8(u8(truncatingIfNeeded: binaryRes))
+            }
+        } else {
+            let a = cpu.r.a; let m = value16; let carry: Int = cpu.flag(.carry) ? 1 : 0
+            let notM = ~m; let binaryRes = Int(a) + Int(notM) + carry
+            cpu.updateNZ16(u16(truncatingIfNeeded: binaryRes))
+            cpu.setFlag(.overflow, ((Int(a) ^ binaryRes) & (Int(notM) ^ binaryRes) & 0x8000) != 0)
+            if cpu.flag(.decimal) {
+                let temp = Int(a) - Int(m) - (1 - carry); var result = temp
+                if (a & 0x0F) < (m & 0x0F) + (1 - u16(carry)) { result -= 6 }
+                if (a & 0xF0) < (m & 0xF0) { result -= 0x60 }
+                if (a & 0x0F00) < (m & 0x0F00) { result -= 0x600 }
+                if (a & 0xF000) < (m & 0xF000) { result -= 0x6000 }
+                cpu.setFlag(.carry, temp >= 0); cpu.setA(u16(truncatingIfNeeded: result))
+            } else {
+                cpu.setFlag(.carry, binaryRes > 0xFFFF); cpu.setA(u16(truncatingIfNeeded: binaryRes))
             }
         }
+    }
 
     @inline(__always)
     private static func sbc_mem(cpu: CPU65816, bank: u8, addr: u16, cycles: Int) -> Int {
@@ -975,7 +934,7 @@ enum CPUInstructionTables {
         case 0x79: return "ADC abs,Y"
         case 0x6F: return "ADC long"
         case 0x7F: return "ADC long,X"
-        case 0xE9, 0xEB: return "SBC #imm"
+        case 0xE9: return "SBC #imm"
         case 0xE5: return "SBC dp"
         case 0xF5: return "SBC dp,X"
         case 0xE1: return "SBC (dp,X)"
